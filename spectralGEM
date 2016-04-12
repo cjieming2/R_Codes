@@ -1,0 +1,92 @@
+### requires MMprime.matrix, Spectral-GEM_Rv1.2.exe, RcallExe.dll, and matching_input.txt
+### Spectral-GEM_subR.R in working directory
+setwd("C:/Documents and Settings/chenjm/Desktop/spectralGEM")
+
+### the program loads the fortran-R interface
+dyn.load("RcallExe.dll") #windows
+
+### the program loads R subfunctions that use in the program
+library("optmatch")
+source("Spectral-GEM_subR.R")
+
+##################
+# STAGE 1:       #
+##################
+
+### Here you specify the input file #############
+ 
+InputFile="matching_input.txt"
+
+##### The program runs main Fortran program.
+
+.C("main")  
+
+# two questions will be asked by the program
+# name of the input file, here you enter the same name as specified for
+# the InputFile :: matching_input.txt
+
+# after Spectral-GEM determines the set of significant eigenvectors 
+# you enter C for clustering or M for matching
+# for most applications it makes sense to use C in this step
+# enter C or M        :: C 
+
+##### The program extracts the file extension
+ext=getVersion(InputFile);
+
+##### Create ancestry plots
+
+pc_graphs_GEMpClusters(ext)         # this shows you how the clusters are distributed
+                                    # over the groups you specified
+pc_graphs_GEMp(ext)                 # this shows how the cases (triangles) and controls 
+                                    #(circles) are distributed over the groups
+
+
+# The following commands create an exclusion list by checking the case-control distances
+# Use visual inspection (V) to select cut off 
+
+excludeFile=getExcludeFile(InputFile);
+updateExcludeFileDstr(excludeFile,ext)      
+
+##################
+# STAGE 2:       #
+##################
+
+# the program updates the input file with a different identifier 
+# the last position of the 5 character run label specified by the user 
+# in the original input file (line 1)
+# is replaced by the value specified in the variable stage of the command.
+
+updateInputFile(oldInputFile=InputFile,newInputFile=InputFile,stage="2",excludeFile)
+ext=getVersion(InputFile);
+cat("InputFile=",InputFile,"\n")
+
+# The program runs main Fortran program.
+
+.C("main")  
+
+# two questions will be asked by the program in a DOS window, you have to answer both
+# name of the input file, here you enter the same name as specified for 
+# the InputFile :: matching_input.txt
+
+# after Spectral-GEM determines the set of significant eigenvectors 
+# you enter C for clustering or M for matching
+# If you want to recluster based on the reduced data set use C again
+# If you want to create the matches that can be used for a clogit case control 
+# association study use M
+# enter C or M :       
+
+# the program generates the matched list by full matching from the package "optmatch"
+# and generates the list for clogit input. 
+# clogit(y~x+strata(stratum)). column1: ID, column2: stratum, column 3: case/control status
+
+full_matching(ext);
+
+#create ancestry plots
+
+pc_graphs_GEMp(ext)                    # creates the ancestry plots for the data to be 
+                                       # analyzed in the association study
+
+
+# unload the fortran-R interface. One can skip this step.
+
+dyn.unload("RcallExe.dll")

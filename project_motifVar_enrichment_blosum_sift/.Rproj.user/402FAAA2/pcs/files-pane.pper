@@ -1,0 +1,9 @@
+{
+    "path" : "~/Shared/scripts-R_perl_shell_macros/R codes/project_motifVar_enrichment_blosum_sift",
+    "sortOrder" : [
+        {
+            "ascending" : true,
+            "columnIndex" : 2
+        }
+    ]
+}

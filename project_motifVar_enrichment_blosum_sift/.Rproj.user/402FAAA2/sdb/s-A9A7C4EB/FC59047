@@ -1,0 +1,22 @@
+{
+    "contents" : "",
+    "created" : 1433333311264.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "FC59047",
+    "lastKnownWriteTime" : 7150081433002324024,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "caption" : "data.ns.only",
+        "contentUrl" : "content?title=data.ns.only&file=c370c63269f94b998f1050eea20871cd.htm",
+        "displayedObservations" : 1000,
+        "displayedVariables" : 83,
+        "totalObservations" : 4872,
+        "variables" : 82
+    },
+    "source_on_save" : false,
+    "type" : "r_dataframe"
+}

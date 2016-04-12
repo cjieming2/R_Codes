@@ -1,0 +1,18 @@
+data <- read.table(pcaFilename, header=TRUE, sep="\t", stringsAsFactors = F)
+
+that is cos R reads the sample.id as factors 
+ when you read.table
+ add in stringsAsFactors=F
+ this will retain all the sample.id as strings
+ try again?
+
+id3 - which(something)
+ dat.new - dat[id3,]
+ this means to get the rows of dat, as indexed by id3
+Jieming pressure again... blog@cjieming.blogspot.com says
+ ok
+ say i want a particular column with a name
+ or i must know the col no
+xueling says
+ dat.new - dat[id3,1] if you know the column number
+ dat.new - dat[id3,sample.id] if you know the column name

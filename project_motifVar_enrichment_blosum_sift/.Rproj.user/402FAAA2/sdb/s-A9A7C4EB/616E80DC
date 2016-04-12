@@ -1,0 +1,22 @@
+{
+    "contents" : "",
+    "created" : 1433332168946.000,
+    "dirty" : false,
+    "encoding" : "",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "616E80DC",
+    "lastKnownWriteTime" : 27303570963497028,
+    "path" : null,
+    "project_path" : null,
+    "properties" : {
+        "caption" : "blos30",
+        "contentUrl" : "content?title=blos30&file=0fed2ef8ecf844b98e633af964260e2c.htm",
+        "displayedObservations" : 34,
+        "displayedVariables" : 1,
+        "totalObservations" : 34,
+        "variables" : 1
+    },
+    "source_on_save" : false,
+    "type" : "r_dataframe"
+}
