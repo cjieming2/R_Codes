@@ -11,6 +11,16 @@ library(sqldf)
 library(plyr)
 library(RMySQL)
 
+# get the directory of a sample SQLite database that has been 
+# bundled into the RImmPort package
+# db_dir <- system.file("extdata", "ImmPortStudies", "Db", package = "RImmPort")
+
+# connect to the database
+# sqlite_conn <- dbConnect(SQLite(), dbname=file.path(db_dir, "ImmPort.sqlite"))
+
+# set the ImmPort SQLite database as the ImmPort data source
+# setImmPortDataSource(sqlite_conn)
+
 ## provide appropriate MySQL database connection parameters
 ## requires a tunnel that opens a port 3307 for redirect to buttelab server port 3306, which connects to AWS 
 ## run the following on bash to create this tunnel in the background
@@ -29,12 +39,3 @@ mysql_conn <- dbConnect(MySQL(), user="chenj", password="3VrTh60IlfiHjLATiVkKn8o
 
 # set the data source as the ImmPort MySQL database.
 setImmPortDataSource(mysql_conn)
-
-# get the directory of a sample SQLite database that has been bundled into the RImmPort package
-db_dir <- system.file("extdata", "ImmPortStudies", "Db", package = "RImmPort")
-
-# connect to the database
-sqlite_conn <- dbConnect(SQLite(), dbname=file.path(db_dir, "ImmPort.sqlite"))
-
-# set the ImmPort SQLite database as the ImmPort data source
-setImmPortDataSource(sqlite_conn)

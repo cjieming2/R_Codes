@@ -1,6 +1,7 @@
 ###############################################################################
 ## one can get this library via:
 ## source("C:/Users/Jieming/Documents/Shared/scripts-R_perl_shell_macros/R codes/jmRlib.R")
+## source("/Users/jiemingchen/R_codes/jmRlib.R")
 
 #######################################################################
 ## 
