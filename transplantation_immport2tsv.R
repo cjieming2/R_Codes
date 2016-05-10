@@ -51,25 +51,33 @@ studies_dir = "/Users/jiemingchen/Documents/transplantation/data"
 #study_id = "SDY356"
 
 ## recipients ####
-# ids = recip_ids
-# for (i in 1:length(ids))
-# {
-#   ## load serialized study data into R
-#   data.study = as.data.frame(loadSerializedStudyData(studies_dir, ids[i], "Demographics")[1])
-# 
-#   ## gender and samplesize stats
-#   if(!exists("data.recip"))
-#   {
-#     data.recip = data.study
-#   } else
-#   {
-#     data.recip = rbind(data.recip,data.study)
-#   }
-# 
-# }
+loadMultipleStudies = function(ids,studies_dir,domain="Demographics") {
+  for (i in 1:length(ids))
+  {
+    ## load serialized study data into R
+    data.study = as.data.frame(loadSerializedStudyData(studies_dir, ids[i], domain)[1])
+  
+    ## gender and samplesize stats
+    if(!exists("data.recip"))
+    {
+      data.recip = data.study
+    } else
+    {
+      data.recip = rbind(data.recip,data.study)
+    }
+  
+  }
+  
+  return(data.recip)
+}
+
+## load serialized data and write to file
+data.recip = loadMultipleStudies(recip_ids,studies_dir,"Demographics")
+# write.table(data.recip, "/Users/jiemingchen/Documents/transplantation/immport2tsv_recipients_1272subjects_16studies.tsv", sep="\t",quote = FALSE, row.names = FALSE)
 
 
-## stats
+
+## stats 
 data.recip = read.table("immport2tsv_recipients_1272subjects_16studies.tsv", stringsAsFactors = FALSE, header = T, sep = "\t")
 library(ggplot2)
 a=data.recip[data.recip$AGEU != "Not_Specified",]
@@ -138,54 +146,22 @@ x11(type="cairo")
 plot_age_sex(b,2)
 ggsave("age_sex_histogram_recip_all_fill_organ.png", dpi = 150)
 
-## write to file
-# write.table(data.recip, "/Users/jiemingchen/Documents/transplantation/immport2tsv_recipients_1272subjects_16studies.tsv", sep="\t",quote = FALSE, row.names = FALSE)
-
-
-
-
 ######################################################
-## donors ####
-# ids = donor_ids
-# for (i in 1:length(ids))
-# {
-#   ## load serialized study data into R 
-#   data.study = as.data.frame(loadSerializedStudyData(studies_dir, ids[i], "Demographics")[1])
-#   
-#   ## gender and samplesize stats
-#   if(!exists("data.donor"))
-#   {
-#     data.donor = data.study
-#   } else
-#   {
-#     data.donor = rbind(data.donor,data.study)
-#   }
-#   
-# }
 
-## write to file ####
+## donors ####
+
+## write to file 
+data.donor = loadMultipleStudies(donor_ids,studies_dir,"Demographics")
 # write.table(data.donor, "/Users/jiemingchen/Documents/transplantation/immport2tsv_donors_10403subjects_6studies.tsv", sep="\t", quote = FALSE, row.names = FALSE)
 
 
 
 ######################################################
+
+
 ## recipients kidney ####
-ids = recip_kidney_ids
-for (i in 1:length(ids))
-{
-  ## load serialized study data into R
-  data.study = as.data.frame(loadSerializedStudyData(studies_dir, ids[i], "Demographics")[1])
-  
-  ## gender and samplesize stats
-  if(!exists("data.recip.kidney"))
-  {
-    data.recip.kidney = data.study
-  } else
-  {
-    data.recip.kidney = rbind(data.recip.kidney,data.study)
-  }
-  
-}
+## load and save to file
+data.recip.kidney = loadMultipleStudies(recip_kidney_ids,studies_dir,"Demographics")
 
 #### stats
 library(ggplot2)
