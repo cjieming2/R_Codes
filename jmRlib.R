@@ -82,7 +82,10 @@ summary.stats = function(data,filename) {
   cat("Mean: ", mean(data), "\n")
   cat("Variance: ", var(data), "\n")
   cat("Standard deviation: ", sd(data), "\n")
-  cat("95% Confidence Interval: (", norm.interval(data), ")\n")
+  
+  ## this calc the normal CI
+  error = qnorm(0.975)*sd(data)/sqrt(length(data))
+  cat("95% Confidence Interval: left:", mean(data)-error, "; right:", mean(data)-error, "\n")
 }
 
 ###############################################################################
