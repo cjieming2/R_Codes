@@ -13,29 +13,31 @@ library(gridExtra)
 library(gapminder)
 
 ## studies i want
-# study_ids=c('SDY131','SDY132','SDY133','SDY134','SDY289','SDY290','SDY291',
-#             'SDY292','SDY294','SDY352','SDY354','SDY355','SDY356','SDY357',
-#             'SDY358','SDY546','SDY567','SDY662','SDY668','SDY671','SDY674')
-# 
-recip_ids=c('SDY131','SDY132','SDY133','SDY134','SDY352','SDY354','SDY355',
-            'SDY356','SDY357','SDY358','SDY546','SDY567','SDY662','SDY668','SDY671','SDY674')
+## left out non-clinical-trials e.g. SDY788 
+study_ids=c('SDY131','SDY132','SDY133','SDY134','SDY289','SDY290','SDY291',
+            'SDY292','SDY293','SDY294','SDY352','SDY354','SDY355','SDY356',
+            'SDY357','SDY358','SDY479','SDY546','SDY557','SDY567','SDY571',
+            'SDY662','SDY668','SDY670','SDY671','SDY674','SDY689')
+
+# recip_ids=c('SDY131','SDY132','SDY133','SDY134','SDY352','SDY354','SDY355',
+#             'SDY356','SDY357','SDY358','SDY546','SDY567','SDY662','SDY668','SDY671','SDY674')
 
 # recip_kidney_ids=c('SDY131','SDY132','SDY133','SDY134','SDY352','SDY354','SDY355','SDY356',
 #                    'SDY357','SDY358','SDY546','SDY668','SDY671','SDY674')
 
 ## SDY546 and SDY674 are a mix - remember to remove non-donors
 ## be sure to check for duplicated lines in subjects! (they can be different line due to differences in ARMs)
-donor_ids=c('SDY289','SDY290','SDY291','SDY292','SDY294','SDY546','SDY674')
+# donor_ids=c('SDY289','SDY290','SDY291','SDY292','SDY294','SDY546','SDY674')
 
 
 ## where the serialized data is locally
-studies_dir = "/Users/jiemingchen/Documents/transplantation/data"
-
-#### starting up, download and serialize specific studies - do once ####
+# studies_dir = "/Users/jiemingchen/Documents/transplantation/data"
+# 
+# #### starting up, download and serialize specific studies - do once ####
 # ## set up tunnel
 # system("/Users/jiemingchen/.start_tunnel.sh")
 # 
-# ## a script with db connect 
+# ## a script with db connect
 # source("/Users/jiemingchen/R_codes/immport_connect.R")
 # 
 # ## serialize specific studies on local directory
@@ -43,10 +45,10 @@ studies_dir = "/Users/jiemingchen/Documents/transplantation/data"
 # 
 # ## close tunnel
 # system("/Users/jiemingchen/.stop_tunnel.sh")
-
-
-#### studies stats ####
-
+# 
+# 
+# #### studies stats ####
+# 
 # list.files(studies_dir)
 
 
@@ -85,6 +87,8 @@ domains = getListOfDomains()
 for (i in 1:nrow(domains))
 {
   data.donor = loadMultipleStudies(donor_ids,studies_dir,domains$`Domain Name`[i])
-  write.table(data.donor, paste("/Users/jiemingchen/Documents/transplantation/",domains$`Domain Code`[i],"_immport2tsv_donors_subjects_7studies.tsv",
-                                sep=""), sep="\t", quote = FALSE, row.names = FALSE)
+  write.table(data.donor, paste("/Users/jiemingchen/Documents/transplantation/",
+                                domains$`Domain Code`[i],"_immport2tsv_donors_subjects_7studies.tsv",
+                                sep=""), 
+              sep="\t", quote = FALSE, row.names = FALSE)
 }

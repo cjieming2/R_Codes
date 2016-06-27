@@ -1,0 +1,54 @@
+---
+title: "transplantation_immport_data_download.R"
+author: "Jieming Chen"
+date: "June 23, 2016"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Overview
+This script uses RImmPort to download structured, data from RImmPort, serialized them and then format the the RImmPort domains into tab-delimited files
+
+***
+
+### Part 1: download RImmPort-structured data (only need to do this once, so you can comment it out after one time)
+
+1. It first sets up a tunnel from a shell script already in the system (Credit: Boris). Remember to close it later in the script.
+```{r eval=FALSE}
+system("/Users/jiemingchen/.start_tunnel.sh")
+system("/Users/jiemingchen/.stop_tunnel.sh")
+```
+
+2. Connects to the ImmPort database in the Butte Lab (refer to this code: immport_connect.R)
+```{r eval=FALSE}
+source("/Users/jiemingchen/R_codes/immport_connect.R")
+```
+
+3. Serialize specific studies on local directory
+```{r eval=FALSE}
+serialzeStudyData(study_ids, data_dir=studies_dir)
+```
+
+### Part 2: Grab ImmPort data, structure them and store (serialize) them to a preset location
+
+Part 2 of this script extracts domain information (23 domains for RImmPort). 
+Note that this should be done after you split the studies into donors and recipients (or whichever stratification), otherwise it's going to compile everything into a single file
+```{r}
+library(RImmPort)
+getListOfDomains()
+```
+
+1. Using a loop and write it to file; change the filename
+```{r eval=FALSE}
+for (i in 1:nrow(domains))
+{
+  data.donor = loadMultipleStudies(donor_ids,studies_dir,domains$`Domain Name`[i])
+  write.table(data.donor, paste("/Users/jiemingchen/Documents/transplantation/",
+                                domains$... = Code`[i],"_immport2tsv_donors_subjects_7studies.tsv", 
+                                sep=""), 
+              sep="\t", quote = FALSE, row.names = FALSE)
+}
+```
