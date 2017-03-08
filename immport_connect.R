@@ -25,9 +25,14 @@ library(RMySQL)
 ## requires a tunnel that opens a port 3307 for redirect to buttelab server port 3306, which connects to AWS 
 ## run the following on bash to create this tunnel in the background
 ## ssh chenj@buttelab-s01.ucsf.edu -fNg -L 3307:buttelab-aws-rds01.cd8zgucpvgtu.us-west-2.rds.amazonaws.com:3306
+## set up tunnel
+system("/Users/jiemingchen/.start_tunnel.sh")
 mysql_conn <- dbConnect(MySQL(), user="chenj", password="3VrTh60IlfiHjLATiVkKn8orM",
                         dbname="proj_study_ALLSTUDIES",
                         host="127.0.0.1", port=3307)
+
+#### close tunnel #####
+system("/Users/jiemingchen/.stop_tunnel.sh")
 
 ## Chethan used this; the host is also on AWS but it's public (doesnt require credentials) 
 ## hence we are able to connect from here
