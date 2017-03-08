@@ -1,4 +1,4 @@
-setwd("C:/Shared/scripts-R_perl_shell_macros/R codes/PubMedTrend");
+setwd("/Users/jiemingchen/Documents/conferences_talks_events/160915-ImmPort_NIAID_site_visit_Rockville_MD/figures/");
 
 # the scripts are downloaded from 
 # http://rpsychologist.com/an-r-script-to-automatically-look-at-pubmed-citation-counts-by-year-of-publication/
