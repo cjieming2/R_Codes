@@ -18,9 +18,9 @@ library(RColorBrewer)
 
 ##-----------------------------------------------------------
 ## input data PRE and POST TRANSPLANT
-pre.t = read.delim("merged-relive01_02_03_immport2tsv-noControls_pretransplant-exam_kidney.txt", header = T, sep = "\t")
-post.t = read.delim("merged-relive01_02_03_immport2tsv-noControls_posttransplant-exam_kidney.txt", header = T, sep = "\t")
-demo = read.delim("merged-relive01_02_03_immport2tsv-noControls_demo-social_kidney.txt", header = T, sep = "\t")
+pre.t = read.delim("pretx/merged-relive01_02_03_immport2tsv-noControls_pretx-exam_kidney.txt", header = T, sep = "\t")
+post.t = read.delim("posttx/merged-relive01_02_03_immport2tsv-noControls_posttx-exam_kidney.txt", header = T, sep = "\t")
+demo = read.delim("demographics/merged-relive01_02_03_immport2tsv-noControls_demo-social_kidney.txt", header = T, sep = "\t")
 
 ## Height; pre.t. EVAL_HGT = in cm
 # compare pre and post tx height - they should be almost the same!
@@ -33,7 +33,7 @@ pmain = ggplot(pre.post.height, aes(EVAL_HGT, HEIGHT_COMBINED, label = Sub_Org_A
 phisto = geom_point()
 plabels = labs(x="pre.tx.height",y="post.tx.height")
 ptext = geom_text(aes(label=ifelse(abs(HEIGHT_COMBINED-EVAL_HGT)>20,as.character(Sub_Org_Accession),'')), vjust = 0, hjust = 0, size = 5)
-pmain + phisto + plabels + paxes + ptitle + plegend + ptext
+pmain + phisto + plabels + ptext
 # ggsave("pre.post.tx.height.pdf", device = "pdf")
 
 
@@ -150,12 +150,12 @@ pmain + phisto + pline1 + pline2 + pline3 + pline4 + paxes + ptitle
 ##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------##---------------------------------------------------------
 ##-----------------------------------------------------------##-----------------------------------------------------------##-----------------------------------------------------------
 ## input data DEMO SOCIAL
-idata = read.delim("merged-relive01_02_03_immport2tsv-noControls_demo-social_kidney.txt", header = T, sep = "\t")
+idata = read.delim("demographics/merged-relive01_02_03_immport2tsv-noControls_demo-social_kidney.txt", header = T, sep = "\t")
 idata=mutate(idata, AGE_TRANSPLANT=round(AGE_TRANSPLANT)) 
 
 ##
 ## add in recipient information
-recip.data = read.delim("merged-relive01_02_03_immport2tsv-noControls_recipient_kidney.txt", header = T, sep = "\t")
+recip.data = read.delim("recipient/merged-relive01_02_03_immport2tsv-noControls_recipient_kidney.txt", header = T, sep = "\t")
 
 ## extract recipient relationship
 recip.rship = select(recip.data, Sub_Org_Accession, DEMO_DNR_RELATE, DEMO_OTH_NONBIO, DEMO_OTH_BIO)
@@ -183,15 +183,18 @@ getPalette = colorRampPalette(brewer.pal(9, "Set1"))
 ## how many colors do we need
 colorCount = length(unique(age.rship$DEMO_DNR_RELATE))
 ## "manually" add colors instead of scale_fill_brewer fixed brwer colors
-pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = getPalette(colorCount)) + pline
-# ggsave("age_reciprship_bar.pdf", device = "pdf")
+newcolors = c("#E41A1C","#66628D","#66628D","#419486","#5A9D5A","#66628D","#999999","#999999","black","#999999","#999999","#999999")
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = getPalette(colorCount)) + pline
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = newcolors) + pline
+# ggsave("age_reciprship_bar_newcolors.pdf", device = "pdf")
 
 #
 # line plot
 pmain = ggplot(age.rship, aes(AGE_TRANSPLANT, count, color = DEMO_DNR_RELATE))
 phisto = geom_line(size=1.5)
-pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline
-# ggsave("age_reciprship_line.pdf", device = "pdf")
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = newcolors) + pline
+# ggsave("age_reciprship_line_newcolors.pdf", device = "pdf")
 
 #
 # split by gender
@@ -199,14 +202,16 @@ age.rship.gender = ddply(.data = idata.reciprship, .variables = c("AGE_TRANSPLAN
 pmain = ggplot(age.rship.gender, aes(AGE_TRANSPLANT, count, fill = DEMO_DNR_RELATE))
 phisto = geom_bar(stat = "identity")
 pfacet = facet_grid(PHI_GENDER ~., scale = "free_y")
-pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = getPalette(colorCount)) + pline + pfacet
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = getPalette(colorCount)) + pline + pfacet
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = newcolors) + pline + pfacet
 # ggsave("age_gender_split_reciprship_bar.pdf", device = "pdf")
 
 pmain = ggplot(age.rship.gender, aes(AGE_TRANSPLANT, count, color = DEMO_DNR_RELATE))
 phisto = geom_line(size=1.5)
 pfacet = facet_grid(PHI_GENDER ~., scale = "free_y")
-pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline + pfacet
-# ggsave("age_gender_split_reciprship_line.pdf", device = "pdf")
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline + pfacet
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = newcolors) + pline + pfacet
+# ggsave("age_gender_split_reciprship_line_newcolors.pdf", device = "pdf")
 
 
 #
