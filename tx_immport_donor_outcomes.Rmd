@@ -1,0 +1,55 @@
+---
+title: "tx_living_donors_outcomes"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+setwd("/Users/jiemingchen/Documents/transplantation/a_donor/immport/studyfiles/final/outcomes")
+library(plyr)
+library(dplyr)
+library(ggplot2)
+
+#### input ####
+outcomes = read.delim("merged-relive01_02_03_immport2tsv-noControls_outcomes.txt", 
+                             header = T, sep = "\t", stringsAsFactors = FALSE)
+
+## keep only rows with kidney and with outcome (dead or alive)
+outcomes.kidney = outcomes %>% filter(!is.na(PSO_LAST_STATUS) & Organ == "kidney")
+
+table(outcomes.kidney$PSO_LAST_STATUS)
+
+## dead
+outcomes.kidney.dead = outcomes.kidney %>% filter(PSO_LAST_STATUS == "Dead")
+
+```
+```{r}
+
+## plot "current" status with prim, secon, tertiary causes of death
+ggplot(outcomes.kidney, aes(PSO_LAST_STATUS)) + 
+  geom_bar(aes(fill = PSO_PRIM_COD))
+
+ggplot(outcomes.kidney, aes(PSO_LAST_STATUS)) + 
+  geom_bar(aes(y = (..count..)/sum(..count..), fill = PSO_PRIM_COD))
+
+ggplot(outcomes.kidney.dead, aes(PSO_PRIM_COD)) + 
+  geom_bar(aes(fill = PSO_PRIM_CODOTH)) + coord_flip()
+
+ggplot(outcomes.kidney.dead, aes(PSO_PRIM_COD)) + 
+  geom_bar(aes(fill = PSO_SEC_COD)) + coord_flip()
+
+ggplot(outcomes.kidney.dead, aes(PSO_PRIM_COD)) + 
+  geom_bar(aes(fill = PSO_TERT_COD)) + coord_flip()
+
+ggplot(outcomes.kidney.dead, aes(PSO_PRIM_COD)) + 
+  geom_bar(aes(fill = DEATHSECONDARYCAUSE)) + coord_flip()
+
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).

@@ -1,0 +1,130 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+# interethnic comparisons of 1KGp3 LRs only for cancers in Weronika's manuscript figs
+## use LLR
+```{r}
+############################################################################################################
+## plot 1KGp3 LRs for Melanoma and Colorectal_cancer
+## for AFR, AMR, EAS, EUR, SAS to check if they reproduce Weronika's plots
+## --> NOTE: no, they dont and logically so, since LR requires pre-test to be legit
+##            inter-ethnic comparisons
+############################################################################################################
+
+## function to plot this
+varimedplot <- function(data, broad_phenotype, plotbyx)
+{
+  ###########################################################################
+  ## colors for spops
+  colors = c("#E41A1C","gray","#4DAF4A","#377EB8","mistyrose4")
+  pops = c("AFR", "AMR", "EAS", "EUR", "SAS") ## colors match these pops
+  ###########################################################################
+  
+  
+  ## input
+  input = data[data$broad_phenotype == broad_phenotype,]
+  
+  sel.pops = which(pops %in% input$population) ## index for which pops
+  sel.colors = colors[sel.pops]
+  
+  
+  ## ggplot
+  ## note that aes_string in function 
+  pmain = ggplot(input, aes_string(x=plotbyx))
+  phisto = geom_density(aes(group=population, color=population, fill=population), alpha=0.3, adjust=3)
+  
+  ## you can replace label with LLR_max later
+  plabels = labs(x=paste("log10(", plotbyx, ")", sep=""),y=paste("density for", broad_phenotype))
+  ptitle = ggtitle(title) + theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+  paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+  
+  j = pmain + phisto + plabels + paxes + scale_color_manual(values = sel.colors) + scale_fill_manual(values = sel.colors)
+  print(j)
+}
+
+########################################
+#### plot 1KG P3
+## data input into varimedplot must contain "LR_max", "population", "broad_phenotype", "sample.id"
+## did not recap Weronika's OR findings - can't use LR for interethnic comparison
+## compare within ethnic group between TCGA and 1KG p3
+
+## plot sum LR
+varimedplot(data=LR.1kg.final, broad_phenotype="Melanoma", plotbyx = "LLR") ## only EUR
+varimedplot(data=LR.1kg.final, broad_phenotype="Pancreatic_cancer", plotbyx = "LLR")
+varimedplot(data=LR.1kg.final, broad_phenotype="Prostate_cancer", plotbyx = "LLR")
+varimedplot(data=LR.1kg.final, broad_phenotype="Colorectal_cancer", plotbyx = "LLR")
+varimedplot(data=LR.1kg.final, broad_phenotype="Bladder_cancer", plotbyx = "LLR")
+varimedplot(data=LR.1kg.final, broad_phenotype="Thyroid_cancer", plotbyx = "LLR")
+varimedplot(data=LR.1kg.final, broad_phenotype="Breast_cancer", plotbyx = "LLR")
+varimedplot(data=LR.1kg.final, broad_phenotype="Lung_cancer", plotbyx = "LLR")
+
+```
+## LLR_max
+```{r}
+## plot max LR
+varimedplot(data=LR.1kg.final, broad_phenotype="Melanoma", plotbyx = "LLR_max")
+varimedplot(data=LR.1kg.final, broad_phenotype="Pancreatic_cancer", plotbyx = "LLR_max")
+varimedplot(data=LR.1kg.final, broad_phenotype="Prostate_cancer", plotbyx = "LLR_max")
+varimedplot(data=LR.1kg.final, broad_phenotype="Colorectal_cancer", plotbyx = "LLR_max")
+varimedplot(data=LR.1kg.final, broad_phenotype="Bladder_cancer", plotbyx = "LLR_max")
+varimedplot(data=LR.1kg.final, broad_phenotype="Thyroid_cancer", plotbyx = "LLR_max")
+varimedplot(data=LR.1kg.final, broad_phenotype="Breast_cancer", plotbyx = "LLR_max")
+varimedplot(data=LR.1kg.final, broad_phenotype="Lung_cancer", plotbyx = "LLR_max")
+
+```
+
+# interethnic comparisons of 1KGp3 LRs for ALL diseases
+```{r}
+############################################################################################################
+## for AFR, AMR, EAS, EUR, SAS to check if they reproduce Weronika's plots
+## --> NOTE: no, they dont and logically so, since LR requires pre-test to be legit
+##            inter-ethnic comparisons
+############################################################################################################
+
+## this function plots faceted varimed plots
+varimedplotfacet <- function(data, colors)
+{
+  pmain = ggplot(data, aes(x=LR_max))
+  phisto = geom_density(aes(group=population, color=population, fill=population), alpha=0.3, adjust=3)
+
+  pfacet = facet_wrap( ~ broad_phenotype, scales="free", ncol=1) 
+  plabels = labs(x="log10(LR_max)",y="density")
+  # paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                 # axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                 # axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+  j = pmain + phisto + plabels + scale_color_manual(values = colors) + scale_fill_manual(values = colors) + pfacet
+  print(j) ## required in notebook otherwise will not print in loop
+}
+
+## plot for all diseases
+by = 5
+colors = c("#E41A1C","gray","#4DAF4A","#377EB8","mistyrose4")
+pops = c("AFR", "AMR", "EAS", "EUR", "SAS") ## colors match these pops
+
+for (i in seq(1,length(dz.1kg),by))
+{
+  selected = LR.1kg.final[LR.1kg.final$broad_phenotype %in% dz.1kg[i:(i+by-1)],]
+  selected.pops = which(pops %in% selected$population) ## index for which pops
+  selected.colors = colors[selected.pops]
+  varimedplotfacet(selected, selected.colors)
+}
+
+
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file).

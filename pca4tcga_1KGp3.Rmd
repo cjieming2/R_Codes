@@ -1,0 +1,183 @@
+---
+title: "pca4tcga_1KGp3"
+output: html_document
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+# PCA
+```{r}
+setwd("/Users/jiemingchen/Documents/varimed/pcawg/pca-1kg-icgc_tcga-merged")
+
+## my own library
+source("/Users/jiemingchen/R_codes/jmRlib.R")
+library(ggplot2)
+library(RColorBrewer)
+
+## input
+eigenvec = read.delim("530390snps-5069samples.1KGp3.ICGC.TCGA.merged.omni.thin4.plink2.eigenvec", header = T, sep = "\t", stringsAsFactors = FALSE, na.strings = "")
+
+eigenval = read.delim("530390snps-5069samples.1KGp3.ICGC.TCGA.merged.omni.thin4.plink2.eigenval", header = F, sep = "\t", stringsAsFactors = FALSE, na.strings = "")
+names(eigenval) = "eigenvalue"
+
+pops = read.delim("samples.1KGp3.ICGC_TCGA.list", header=T, sep="\t", stringsAsFactors=FALSE, na.strings = "")
+
+## eigenvec and pop info
+eigenvec.pop = merge(pops, eigenvec, by.x = "sample.id", by.y = "X.FID")
+eigenvec.pop[eigenvec.pop$dataset == "ICGC" | eigenvec.pop$dataset == "TCGA",]$population = "ICGC_TCGA"
+eigenvec.pop[eigenvec.pop$dataset == "ICGC" | eigenvec.pop$dataset == "TCGA",]$superpopulation = "ICGC_TCGA"
+
+## choosing colors ####
+colorCount = length(unique(eigenvec.pop$population))
+
+nc="" # AFR - red ; EAS - green ; EUR - blue ; AMR - purple ; SAS - orange
+nc[1] = "magenta" #ACB
+nc[2] = "tomato"  #ASW
+nc[3] = "orange"  #BEB
+nc[4] = "yellowgreen" #CDX
+nc[5] = "cyan"        #CEU
+nc[6] = "green"       #CHB
+nc[7] = "turquoise"   #CHS
+nc[8] = "purple"      #CLM
+nc[9] = "violetred1"  #ESN
+nc[10] = "skyblue1"   #FIN
+nc[11] = "slateblue"  #GBR
+nc[12] = "tan1"       #GIH
+nc[13] = "maroon1"     #GWD
+nc[14] = "slategray2"  #IBS
+nc[15] = "black"          #ICGC_TGCA
+nc[16] = "lightsalmon" #ITU
+nc[17] = "springgreen" #JPT
+nc[18] = "olivedrab"   #KHV
+nc[19] = "mediumvioletred" #LWK
+nc[20] = "sienna"          #MSL
+nc[21] = "mediumorchid"    #MXL
+nc[22] = "magenta4" #PEL
+nc[23] = "orange3" #PJL
+nc[24] = "violetred4" #PUR
+nc[25] = "lightsalmon3" #STU
+nc[26] = "steelblue1" #TSI
+nc[27] = "yellow" #YRI
+
+## plot population ####
+pmain = ggplot(eigenvec.pop, aes(PC1,PC2))
+phisto = geom_point(aes(color=population), position=position_jitter(), alpha=0.5)
+plabels = labs(x=paste("PC1 (", round(eigenval[1,1]/sum(eigenval)*100,2), "%)", sep=""),
+               y=paste("PC2 (", round(eigenval[2,1]/sum(eigenval)*100,2), "%)", sep=""))
+paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+
+p=pmain + phisto + plabels + paxes + ptitle + scale_color_manual(values = nc)
+print(p)
+
+```
+```{r}
+## colors super populations
+nc.super = ""
+nc.super[1] = "red" ## AFR
+nc.super[2] = "purple" ## AMR
+nc.super[3] = "green" ## EAS
+nc.super[4] = "cyan" ## EUR
+nc.super[5] = "black" ## ICGC_TCGA
+nc.super[6] = "orange" ## SAS
+
+## plot superpopulation ####
+pmain = ggplot(eigenvec.pop, aes(PC1,PC2))
+phisto = geom_point(aes(color=superpopulation), position=position_jitter(), alpha=0.5)
+plabels = labs(x=paste("PC1 (", round(eigenval[1,1]/sum(eigenval)*100,2), "%)", sep=""),
+               y=paste("PC2 (", round(eigenval[2,1]/sum(eigenval)*100,2), "%)", sep=""))
+paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+
+p=pmain + phisto + plabels + paxes + ptitle + scale_color_manual(values = nc.super)
+print(p)
+```
+```{r}
+## eigenvec and pop info
+eigenvec.pop = merge(pops, eigenvec, by.x = "sample.id", by.y = "X.FID")
+eigenvec.pop[eigenvec.pop$dataset == "ICGC" | eigenvec.pop$dataset == "TCGA",]$population = "TCGA_ICGC"
+
+eigenvec.pop[eigenvec.pop$dataset == "ICGC" | eigenvec.pop$dataset == "TCGA",]$superpopulation = paste("TCGA_ICGC_", eigenvec.pop[eigenvec.pop$dataset == "ICGC" | eigenvec.pop$dataset == "TCGA",]$superpopulation, sep="")
+
+## colors super populations
+nc.supern = ""
+nc.supern[1] = "red" ## AFR
+nc.supern[2] = "purple" ## AMR
+nc.supern[3] = "green" ## EAS
+nc.supern[4] = "cyan" ## EUR
+nc.supern[5] = "orange" ## SAS
+nc.supern[6] = "black" ## TCGA_ICGC_ADM
+nc.supern[7] = "pink" ## TCGA_ICGC_AFR
+nc.supern[8] = "magenta" ## TCGA_ICGC_AMR
+nc.supern[9] = "yellowgreen" ## TCGA_ICGC_ASN
+nc.supern[10] = "blue" ## TCGA_ICGC_EUR
+nc.supern[11] = "brown" ## TCGA_ICGC_SAN
+nc.supern[12] = "brown" ## TCGA_ICGC_SAN
+
+## plot superpopulation ####
+pmain = ggplot(eigenvec.pop, aes(PC1,PC2))
+phisto = list(geom_point(aes(color=superpopulation, shape=superpopulation, size=superpopulation, alpha=superpopulation), position=position_jitter()), geom_point(data=subset(eigenvec.pop, superpopulation == "TCGA_ICGC_SAN"), color="brown", shape=16, size=7, alpha=1))
+
+plabels = labs(x=paste("PC1 (", round(eigenval[1,1]/sum(eigenval)*100,2), "%)", sep=""),
+               y=paste("PC2 (", round(eigenval[2,1]/sum(eigenval)*100,2), "%)", sep=""))
+paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 32),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 32),
+              axis.text.x = element_text(size = 30), axis.text.y = element_text(size = 30))
+ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+
+## segregate TCGA_SAN people
+eigenvec.pop.SAN = subset(eigenvec.pop, superpopulation == "TCGA_ICGC_SAN")
+
+pmain + phisto + plabels + paxes + ptitle + 
+  scale_color_manual(values = nc.supern) + 
+  scale_shape_manual(values=c(rep(3,5),rep(16,7))) +
+  scale_size_manual(values=c(rep(3,5),rep(4,7))) + 
+  scale_alpha_manual(values=c(rep(1,5),0.5,rep(1,6))) + 
+  theme(legend.title = element_text(size=15, face="bold"), legend.text=element_text(size=15)) 
+# ggsave("pca_superpop.pdf", device = "pdf")
+
+
+
+
+```
+
+# see if SAN is really there
+```{r}
+## colors super populations
+nc.supern = ""
+nc.supern[1] = "red" ## AFR
+nc.supern[2] = "purple" ## AMR
+nc.supern[3] = "green" ## EAS
+nc.supern[4] = "cyan" ## EUR
+nc.supern[5] = "orange" ## SAS
+nc.supern[6] = "black" ## TCGA_ICGC_ADM
+nc.supern[7] = "pink" ## TCGA_ICGC_AFR
+nc.supern[8] = "magenta" ## TCGA_ICGC_AMR
+nc.supern[9] = "yellowgreen" ## TCGA_ICGC_ASN
+nc.supern[10] = "blue" ## TCGA_ICGC_EUR
+nc.supern[11] = "brown" ## TCGA_ICGC_SAN
+
+## plot superpopulation ####
+pmain = ggplot(eigenvec.pop, aes(PC1,PC2))
+phisto = geom_point(aes(color=superpopulation, shape=superpopulation, size=superpopulation, alpha=superpopulation), position=position_jitter())
+plabels = labs(x=paste("PC1 (", round(eigenval[1,1]/sum(eigenval)*100,2), "%)", sep=""),
+               y=paste("PC2 (", round(eigenval[2,1]/sum(eigenval)*100,2), "%)", sep=""))
+paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 32),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 32),
+              axis.text.x = element_text(size = 30), axis.text.y = element_text(size = 30))
+ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+
+pmain + phisto + plabels + paxes + ptitle + scale_color_manual(values = nc.supern) + 
+  scale_shape_manual(values=c(rep(3,5),rep(16,6))) +
+  scale_size_manual(values=c(rep(3,5),rep(4,6))) + 
+  scale_alpha_manual(values=c(rep(0,5),rep(0,5),1)) + 
+  theme(legend.title = element_text(size=15, face="bold"), legend.text=element_text(size=15))
+# ggsave("pca_superpop.pdf", device = "pdf")
+
+```

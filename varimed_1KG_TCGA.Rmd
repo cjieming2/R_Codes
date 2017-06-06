@@ -1,0 +1,450 @@
+---
+title: "varimed_1KG_TCGA"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+# this chunk cares about the main input 
+```{r}
+
+setwd("/Users/jiemingchen/Documents/varimed/pcawg/dz_risk_var_varimed_staging_LR_final_ext_sex_eth_spop_zm")
+
+## my own library
+source("/Users/jiemingchen/R_codes/jmRlib.R")
+library(ggplot2)
+library(RColorBrewer)
+library(plyr)
+library(dplyr)
+library(reshape2)
+
+## input combined risks for 1KGp3
+## note that LR = exp(sum(log(LR))) of all SNPs with given dz from same sample; LR_max = SNP with max abs logLR
+LR.1kg = read.delim("combined_dz_risk_1000GP_spop_zm.txt", header = T, sep = "\t", stringsAsFactors = FALSE, na.strings = "") ## curr one
+LR.1kg.final = LR.1kg %>% mutate(LLR = log10(LR), LLR_max = log10(LR_max))
+LR.1kg.final$dataset = "1KGP3"
+
+## input combined risks for ICGC_TCGA
+LR.cancer = read.delim("combined_dz_risk_ICGC_TCGA_spop_zm_histology.txt", header = T, sep = "\t", stringsAsFactors = FALSE, na.strings = "")
+LR.cancer.final = LR.cancer %>% mutate(LLR = log10(LR), LLR_max = log10(LR_max))
+LR.cancer.final$dataset = "ICGC_TCGA"
+
+### some stats
+## number of cancer types in ICGC_TCGA patients
+cancertypes = sort(unique(LR.cancer.final$histology_abbreviation))
+
+## number of broad_phenotypes
+dz.1kg = sort(unique(LR.1kg.final$broad_phenotype))
+dz.tcga = sort(unique(LR.cancer.final$broad_phenotype))
+
+```
+
+
+
+# Preprocessing datasets and calculate Mann Whitney test p values (unadj) and BH (adj)
+```{r}
+
+## Preprocessing datasets and calculate Mann Whitney test p values (unadj) and BH (adj) ####
+## this function preprocesses the datasets into 3 matrices FOR ONE POPULATION
+## Loop Mann-Whitney test for TCGA vs 1KGp3 (will take a while... about 6 min)
+## 1: num(dz)-by-num(cancertypes) matrix of MW p values (unadj)
+## 2: num(dz)-by-num(cancertypes) matrix of size of subsets (note subsets<10 of size are NA)
+## 3: melted down version of 1 with 2 columns of dz and cancertypes as primary keys for p values (unadj)
+## 4: melted down version subsetted by cancertypes to match dz_cancers
+## input requires columns LLR and histology_abbreviation and broad_phenotype
+## tflags 1: MW unadjusted p values
+##        2: size of datasets
+##        3: numSNPs (mean num over all individuals in each dataset, risk + protective)
+preprocess_mat_by_pop <- function(pop, dzes, cancertypes, cancerdata, ref1kgdata, LLRcol, tflag=0)
+{
+  ## nested function to make an array of dz by cancer for apply
+  mwp <- function(cancerdata, ref1kgdata, pop, LLRcol, cancertype, dz, tflag=0)
+  {
+    tcga = subset(cancerdata, eval(parse(text=pop)) & broad_phenotype == dz & histology_abbreviation == cancertype)
+    
+    onekg = subset(ref1kgdata, eval(parse(text=pop)) & broad_phenotype == dz)
+    
+    # if tflag == 0, unadjusted MW pvalues
+    # arbitrary min datapoint of 10 in either dataset to compute MW test
+    # 2.sided unadjusted
+    # tflag = troubleshooting flag
+    if (tflag == 0)
+    {
+      return(ifelse(nrow(tcga) > 10 & nrow(onekg) > 10, wilcox.test(tcga[,LLRcol], onekg[,LLRcol])$p.value, NA))
+    }
+    else if (tflag == 1)
+    {
+      ## tflag == 1, number of individuals in each dataset
+      return(paste("1KGP3:", nrow(onekg),"|TCGA:", nrow(tcga)))
+    }
+    else
+    {
+      ## tflag == 2, mean over individuals of number of SNPs = numRiskAlleles + numProtectiveAlleles
+      numSNPs.tcga = mean(tcga[,"SNP_risk"] + tcga[,"SNP_protective"])
+      numSNPs.1kgp3 = mean(onekg[,"SNP_risk"] + onekg[,"SNP_protective"])
+      
+      return(paste("1KGP3:", numSNPs.1kgp3,"|TCGA:", numSNPs.tcga))
+    }
+    
+  }
+  
+  # produce 2 cancertypes-by-dz matrices: 
+  # if tflag == 0, unadjusted MW pvalues
+  # if tflag == 1, size of datasets (for troubleshooting) 
+  if(tflag == 0)
+  {
+    mat.pval = as.data.frame(sapply(cancertypes, function(i) sapply(dzes, function(j) mwp(cancerdata, ref1kgdata, pop, "LLR", i, j, tflag))))
+    
+    ## (3) melt pval matrix for heatmap plotting, by histology, 
+    ## + unadj pval + BH-adj p val
+    mat.pval2 = cbind(rownames(mat.pval), mat.pval)
+    colnames(mat.pval2)[1] = "broad_phenotype"
+    mat.pval.m = melt(mat.pval2, variable.name = "histology_abbreviation", value.name = "LLR.p", id.vars = "broad_phenotype")
+    
+    ## BH-adj p values
+    mat.pval.m$LLR.p.adj = p.adjust(mat.pval.m$LLR.p, method = "BH") ## n = 2240 (excluding NAs)
+    
+    mat.pval.m$rank = rank(mat.pval.m$LLR.p)
+    
+    ## subset1: cancer match subset
+    mat.ss1.cancer.match = mat.pval.m %>% subset(broad_phenotype == "Breast_cancer" |
+                                                   broad_phenotype == "Colorectal_cancer" |
+                                                   broad_phenotype == "Esophageal_cancer" |
+                                                   broad_phenotype == "Renal_cell_cancer" |
+                                                   broad_phenotype == "Renal_cell_carcinoma" |
+                                                   broad_phenotype == "HCV-induced_hepatocellular_carcinoma" |
+                                                   broad_phenotype == "HBV-induced_hepatocellular_carcinoma" |
+                                                   broad_phenotype == "Hepatocellular_carcinoma" |
+                                                   broad_phenotype == "Lung_adenocarcinoma" |
+                                                   broad_phenotype == "Lung_cancer" |
+                                                   broad_phenotype == "Non-Small_cell_lung_cancer" |
+                                                   broad_phenotype == "Lung_cancer" |
+                                                   broad_phenotype == "Squamous_cell_carcinoma_of_lungs" |
+                                                   broad_phenotype == "Follicular_lymphoma" |
+                                                   broad_phenotype == "Chronic_lymphocytic_leukemia" |
+                                                   broad_phenotype == "Myeloproliferative_disorders" |
+                                                   broad_phenotype == "Ovarian_cancer" |
+                                                   broad_phenotype == "Pancreatic_cancer" |
+                                                   broad_phenotype == "Prostate_cancer" |
+                                                   broad_phenotype == "Melanoma" |
+                                                   broad_phenotype == "Gastric_cancer" |
+                                                   broad_phenotype == "Papillary_thyroid_cancer" |
+                                                   broad_phenotype == "Thyroid_cancer")
+    
+    ## return
+    return(list(mat.pval, mat.pval.m, mat.ss1.cancer.match))
+  }
+  else if(tflag == 1)
+  {
+    ## tflag == 1, number of individuals in each dataset
+    mat.nums = as.data.frame(sapply(cancertypes, function(i) sapply(dzes, function(j) mwp(cancerdata, ref1kgdata, pop, "LLR", i, j, tflag)))) ## debug
+    
+    return(mat.nums)
+  }
+  else 
+  {
+    ## tflag == 2, mean over individuals of number of SNPs = numRiskAlleles + numProtectiveAlleles
+    mat.numSNPs = as.data.frame(sapply(cancertypes, function(i) sapply(dzes, function(j) mwp(cancerdata, ref1kgdata, pop, "c(SNP_risk, SNP_protective)", i, j, tflag)))) 
+    
+    return(mat.numSNPs)
+  }
+}
+
+
+## EUR only ~~~~~~~~~~~~~~~~~~~~~~~~
+## loop
+## user  system elapsed 
+## 321.887  40.770 364.277 
+system.time({
+EUR.procdata = preprocess_mat_by_pop("population == \"EUR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=0)
+})
+EUR.mat.pval = as.data.frame(EUR.procdata[1])
+EUR.mat.pval.m = as.data.frame(EUR.procdata[2])
+EUR.cancer.match.ss1 = as.data.frame(EUR.procdata[3])
+EUR.mat.nums = preprocess_mat_by_pop("population == \"EUR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=1) ## debug
+EUR.mat.numSNPs = preprocess_mat_by_pop("population == \"EUR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "c(SNP_risk, SNP_protective)", tflag=2)
+
+## EAS only ~~~~~~~~~~~~~~~~~~~~~~~~
+## loop
+## user  system elapsed 
+## 321.887  40.770 364.277 
+system.time({
+EAS.procdata = preprocess_mat_by_pop("population == \"EAS\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=0)
+})
+EAS.mat.pval = as.data.frame(EAS.procdata[1])
+EAS.mat.pval.m = as.data.frame(EAS.procdata[2])
+EAS.cancer.match.ss1 = as.data.frame(EAS.procdata[3])
+EAS.mat.nums = preprocess_mat_by_pop("population == \"EAS\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=1) ## debug
+EAS.mat.numSNPs = preprocess_mat_by_pop("population == \"EAS\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "c(SNP_risk, SNP_protective)", tflag=2)
+
+## AMR only ~~~~~~~~~~~~~~~~~~~~~~~~
+## loop
+## user  system elapsed 
+## 321.887  40.770 364.277 
+system.time({
+AMR.procdata = preprocess_mat_by_pop("population == \"AMR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=0)
+})
+AMR.mat.pval = as.data.frame(AMR.procdata[1])
+AMR.mat.pval.m = as.data.frame(AMR.procdata[2])
+AMR.cancer.match.ss1 = as.data.frame(AMR.procdata[3])
+AMR.mat.nums = preprocess_mat_by_pop("population == \"AMR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=1) ## debug
+AMR.mat.numSNPs = preprocess_mat_by_pop("population == \"AMR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "c(SNP_risk, SNP_protective)", tflag=2)
+
+## AFR only ~~~~~~~~~~~~~~~~~~~~~~~~
+## loop
+## user  system elapsed 
+## 321.887  40.770 364.277 
+system.time({
+AFR.procdata = preprocess_mat_by_pop("population == \"AFR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=0)
+})
+AFR.mat.pval = as.data.frame(AFR.procdata[1])
+AFR.mat.pval.m = as.data.frame(AFR.procdata[2])
+AFR.cancer.match.ss1 = as.data.frame(AFR.procdata[3])
+AFR.mat.nums = preprocess_mat_by_pop("population == \"AFR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=1) ## debug
+AFR.mat.numSNPs = preprocess_mat_by_pop("population == \"AFR\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "c(SNP_risk, SNP_protective)", tflag=2)
+
+## SAS only ~~~~~~~~~~~~~~~~~~~~~~~~
+## loop
+## user  system elapsed 
+## 321.887  40.770 364.277 
+system.time({
+SAS.procdata = preprocess_mat_by_pop("population == \"SAS\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=0)
+})
+SAS.mat.pval = as.data.frame(SAS.procdata[1])
+SAS.mat.pval.m = as.data.frame(SAS.procdata[2])
+SAS.cancer.match.ss1 = as.data.frame(SAS.procdata[3])
+SAS.mat.nums = preprocess_mat_by_pop("population == \"SAS\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "LLR", tflag=1) ## debug
+SAS.mat.numSNPs = preprocess_mat_by_pop("population == \"SAS\"", dz.tcga, cancertypes, LR.cancer.final, LR.1kg.final, "c(SNP_risk, SNP_protective)", tflag=2)
+
+```
+
+# Plot matrices
+```{r}
+#################################################################
+# Heatmap of p.values (adj) of cancertypes vs diseases in VariMed
+## ggplot cant do heatmap v well
+## ggplot cant border cells v well
+
+library(data.table)
+plotmatrix <- function(mat, colp, xfontsize, yfontsize, colors, pop)
+{
+  
+  
+  ## discretize/categorize p values into 3 categories with new column p.cat
+  mat$p.cat = ifelse(mat[,colp] <= 0.01, "0-0.01", 
+                     ifelse(mat[,colp] > 0.01 & mat[,colp] <=0.05, "0.01-0.05", 
+                            ifelse(mat[,colp] > 0.05 & mat[,colp] <=0.1, "0.05-0.1", "0.1-")))
+  
+  ## change >0.1 to NA
+  # mat[,colp] = ifelse(mat[,colp] > 0.1, NA, mat[,colp])
+  # mat = mat[complete.cases(mat),]
+  
+  
+  
+  ## heatmap 1 -- everything
+  pl = ggplot(mat, aes(histology_abbreviation, broad_phenotype)) + 
+    geom_tile(aes(fill = p.cat), colour = "white") +
+    theme(legend.position = "none", 
+          axis.text.x = element_text(size = xfontsize, angle = 330, 
+                                     hjust = 0, color = "grey50"),
+          axis.text.y = element_text(size = yfontsize)) + 
+    theme(legend.position="right") + 
+    scale_fill_manual(values = colors, na.value = "white") +
+    labs(y=paste(pop,"_broad_phenotype"),x="histology_abbreviation")
+  # +
+  # theme(panel.border=element_rect(fill = NA, colour=alpha('black', 0.5), size=5)) 
+  
+  pl
+}
+
+## EUR
+plotmatrix(EUR.mat.pval.m, colp="LLR.p.adj", xfontsize=5, yfontsize=5, colors=c("black","#3794bf","#df8640","gray90"), "EUR")
+plotmatrix(EUR.cancer.match.ss1, colp="LLR.p.adj", xfontsize=4, yfontsize=8, colors=c("black","#df8640","gray90", "#3794bf"), "EUR")
+
+## EAS
+plotmatrix(EAS.mat.pval.m, colp="LLR.p.adj", xfontsize=8, yfontsize=5, colors=c("black","#3794bf","#df8640","gray90"), "EAS")
+plotmatrix(EAS.cancer.match.ss1, colp="LLR.p.adj", xfontsize=5, yfontsize=7, colors=c("black","#df8640","gray90", "#3794bf"), "EAS")
+
+## AFR
+plotmatrix(AFR.mat.pval.m, colp="LLR.p.adj", xfontsize=8, yfontsize=5, colors=c("gray90","black","#3794bf","#df8640"), "AFR")
+plotmatrix(AFR.cancer.match.ss1, colp="LLR.p.adj", xfontsize=5, yfontsize=7, colors=c("black","#df8640","gray90", "#3794bf"), "AFR")
+
+## AMR
+plotmatrix(AMR.mat.pval.m, colp="LLR.p.adj", xfontsize=8, yfontsize=5, colors=c("black","#3794bf","#df8640","gray90"), "AMR")
+plotmatrix(AMR.cancer.match.ss1, colp="LLR.p.adj", xfontsize=5, yfontsize=7, colors=c("black","#df8640","gray90", "#3794bf"), "AMR")
+
+## SAS
+plotmatrix(SAS.mat.pval.m, colp="LLR.p.adj", xfontsize=8, yfontsize=5, colors=c("gray90", "black","#3794bf","#df8640"), "SAS")
+plotmatrix(SAS.cancer.match.ss1, colp="LLR.p.adj", xfontsize=5, yfontsize=7, colors=c("black","#df8640","gray90", "#3794bf"), "SAS")
+
+```
+
+# violin plots
+```{r}
+
+plotviolin <- function(cancerdata, refdata, popparse, cancertypeparse, dz)
+{
+  tcga = subset(LR.cancer.final, eval(parse(text=popparse)) & eval(parse(text=cancertypeparse)), 
+                                   select=c(sample.id, population, broad_phenotype, LLR, LLR_max, dataset))
+  kgp3 = subset(LR.1kg.final, eval(parse(text=popparse)), 
+                                   select=c(sample.id, population, broad_phenotype, LLR, LLR_max, dataset))
+
+  merged = rbind(tcga, kgp3)
+  
+  ## mann whitney test for melanoma
+  mm.1kgp3 = kgp3[kgp3$broad_phenotype==dz,]
+  mm.tcga = tcga[tcga$broad_phenotype==dz,]
+  mm.merged = merged[merged$broad_phenotype == dz,]
+  
+  print(paste(popparse,"_", cancertypeparse, "_", dz, " p.val, 2-sided"))
+  jm1 = wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR)$p.value
+  print(paste(popparse,"_", cancertypeparse, "_", dz, " p.val, less"))
+  jm2 = wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR, alternative = "less")$p.value ## x < y
+  print(paste(popparse,"_", cancertypeparse, "_", dz, " p.val, greater"))
+  jm3 = wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR, alternative = "greater")$p.value ## x > y
+  
+  ## plot violin and boxplot for melanoma
+  pd <- position_dodge(0.9)
+  pmain2 = ggplot(mm.merged, aes(x=dataset, y=LLR, fill = factor(dataset)))
+  phisto2 = geom_violin()
+  phisto3 = geom_boxplot(width=.1, outlier.size=0, fill="grey50", position=pd) 
+  phisto4 = stat_summary(fun.y=median)
+  ptitle = ggtitle(paste(gsub("population==","",popparse), " ", gsub("histology_abbreviation==", "", cancertypeparse)))
+  plabels = labs(x=dz,y="LLR distribution")
+  jm4 = pmain2 + phisto2 + phisto3 + phisto4 + 
+    ptitle + plabels + theme(legend.position="none") + 
+    scale_color_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") + coord_flip()
+  print(jm4)
+  
+  return(list(jm1,jm2,jm3))
+}
+
+## item1: 2 sided unadj pvalue, 1sided x<y, 1sided x>y
+p.melanoma.melanoma = as.data.frame(plotviolin(LR.cancer.final, LR.1kg.final, 
+                               "population==\"EUR\"", 
+                               "histology_abbreviation==\"Skin-Melanoma\"",
+                               dz = "Melanoma"))
+names(p.melanoma.melanoma) = c("2sided","1sided_less","1sided_greater")
+p.melanoma.melanoma$twosided_adj.p = EUR.mat.pval.m[EUR.mat.pval.m$broad_phenotype=="Melanoma" & EUR.mat.pval.m$histology_abbreviation=="Skin-Melanoma",]$LLR.p.adj
+p.melanoma.melanoma$size = EUR.mat.numSNPs["Melanoma","Skin-Melanoma"]
+
+
+```
+
+# histograms: compare (1KGp3 EUR) vs (ICGC_TCGA EUR melanoma patients) LRs for ALL VariMed diseases
+```{r}
+tcga.EUR.melanoma = subset(LR.cancer.final, population == "EUR" & histology_abbreviation == "Skin-Melanoma", 
+                                   select=c(sample.id, population, broad_phenotype, LLR, LLR_max, dataset))
+kgp3.EUR.melanoma = subset(LR.1kg.final, population == "EUR", 
+                                   select=c(sample.id, population, broad_phenotype, LLR, LLR_max, dataset))
+
+merged.EUR.melanoma = rbind(tcga.EUR.melanoma, kgp3.EUR.melanoma)
+
+## plotting
+pmain = ggplot(tcga.EUR.melanoma[tcga.EUR.melanoma$broad_phenotype %in% dz.tcga[1:10],], aes(x=broad_phenotype, y=LLR))
+phisto = geom_boxplot()
+ptitle = ggtitle("Skin-Melanoma")
+# pfacet = facet_wrap( ~ broad_phenotype, scales="free", ncol=1) 
+plabels = labs(x="broad phenotype",y="LLR distribution")
+# paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+               # axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+               # axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+
+pmain + phisto + ptitle + plabels + scale_color_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") + coord_flip() + geom_jitter(height = 0, width = 0.1)
+
+## new
+by=10
+for (i in seq(1,length(dz.tcga),by=by))
+{
+  pmain2 = ggplot(merged.EUR.melanoma[merged.EUR.melanoma$broad_phenotype %in% dz.tcga[i:(i+by-1)],], 
+               aes(x=broad_phenotype, y=LLR, fill = factor(dataset)))
+  phisto2 = geom_boxplot(width=0.7, outlier.shape=3) ## shape 3 = '+'
+  j = pmain2 + phisto2 + ptitle + plabels + 
+       scale_color_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") + coord_flip() 
+  print(j)
+}
+
+```
+
+
+# Mann-Whitney tests & violin plots for TCGA 'Skin-Melanoma' EUR patients for LRs for 'Melanoma' (pos) and 'Obesity' (neg) and 'Renal_cell_cancer'
+```{r}
+## mann whitney test for melanoma
+mm.1kgp3 = kgp3.EUR.melanoma[kgp3.EUR.melanoma$broad_phenotype=="Melanoma",]
+mm.tcga = tcga.EUR.melanoma[tcga.EUR.melanoma$broad_phenotype=="Melanoma",]
+mm.merged = merged.EUR.melanoma[merged.EUR.melanoma$broad_phenotype == "Melanoma",]
+  
+print("Melanoma-Melanoma p.val, 2-sided")
+wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR)$p.value
+print("Melanoma-Melanoma p.val, less")
+wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR, alternative = "less")$p.value ## x < y
+print("Melanoma-Melanoma p.val, greater")
+wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR, alternative = "greater")$p.value ## x > y
+
+## plot violin and boxplot for melanoma
+pd <- position_dodge(0.9)
+pmain2 = ggplot(mm.merged, aes(x=dataset, y=LLR, fill = factor(dataset)))
+phisto2 = geom_violin()
+phisto3 = geom_boxplot(width=.1, outlier.size=0, fill="grey50", position=pd) 
+phisto4 = stat_summary(fun.y=median)
+plabels = labs(x="Melanoma",y="LLR distribution")
+pmain2 + phisto2 + phisto3 + phisto4 + 
+  ptitle + plabels + theme(legend.position="none") + 
+  scale_color_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") + coord_flip()
+
+#---------
+
+## mann whitney test for Renal_cell_cancer
+mr.1kgp3 = kgp3.EUR.melanoma[kgp3.EUR.melanoma$broad_phenotype=="Renal_cell_cancer",]
+mr.tcga = tcga.EUR.melanoma[tcga.EUR.melanoma$broad_phenotype=="Renal_cell_cancer",]
+mr.merged = merged.EUR.melanoma[merged.EUR.melanoma$broad_phenotype == "Renal_cell_cancer",]
+
+# print("Melanoma-renal_cell_cancer p.val, 2-sided")
+# wilcox.test(mr.1kgp3$LLR, mr.tcga$LLR)$p.value
+# print("Melanoma-renal_cell_cancer p.val, less")
+# wilcox.test(mr.1kgp3$LLR, mr.tcga$LLR, alternative = "less")$p.value ## x < y
+# print("Melanoma-renal_cell_cancer p.val, greater")
+# wilcox.test(mr.1kgp3$LLR, mr.tcga$LLR, alternative = "greater")$p.value ## x > y
+
+## plot violin and boxplot for Renal_cell_cancer
+pd <- position_dodge(0.9)
+pmain2 = ggplot(mr.merged, aes(x=dataset, y=LLR, fill = factor(dataset)))
+phisto2 = geom_violin()
+phisto3 = geom_boxplot(width=.1, outlier.size=0, fill="grey50", position=pd) 
+phisto4 = stat_summary(fun.y=median)
+plabels = labs(x="Renal_cell_cancer",y="LLR distribution")
+pmain2 + phisto2 + phisto3 + phisto4 + 
+  ptitle + plabels + theme(legend.position="none") + 
+  scale_color_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") + coord_flip()
+
+## mann whitney test for Obesity
+mo.1kgp3 = kgp3.EUR.melanoma[kgp3.EUR.melanoma$broad_phenotype=="Obesity",]
+mo.tcga = tcga.EUR.melanoma[tcga.EUR.melanoma$broad_phenotype=="Obesity",]
+mo.merged = merged.EUR.melanoma[merged.EUR.melanoma$broad_phenotype == "Obesity",]
+
+
+print("Melanoma-Obesity p.val, 2-sided")
+wilcox.test(mo.1kgp3$LLR, mo.tcga$LLR)$p.value
+print("Melanoma-Obesity p.val, less")
+wilcox.test(mo.1kgp3$LLR, mo.tcga$LLR, alternative = "less")$p.value ## x < y
+print("Melanoma-Obesity p.val, greater")
+wilcox.test(mo.1kgp3$LLR, mo.tcga$LLR, alternative = "greater")$p.value ## x > y
+
+## plot violin and boxplots for obesity
+pmain2 = ggplot(mo.merged, aes(x=dataset, y=LLR, fill = factor(dataset)))
+phisto2 = geom_violin()
+phisto3 = geom_boxplot(width=.1, outlier.size=0, fill="grey50", position=pd) 
+phisto4 = stat_summary(fun.y=median)
+plabels = labs(x="Obesity",y="LLR distribution")
+pmain2 + phisto2 + phisto3 + phisto4 + 
+  ptitle + plabels + theme(legend.position="none") + 
+  scale_color_brewer(palette = "Set1") + scale_fill_brewer(palette = "Set1") + coord_flip()
+
+
+
+```
+
