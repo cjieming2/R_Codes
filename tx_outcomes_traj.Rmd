@@ -1,0 +1,473 @@
+---
+title: "R Notebook"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r}
+library(animation)
+library(visNetwork)
+library(dplyr)
+library(reshape2)
+library(igraph)
+library(data.table)
+library(rgl)
+library(ggplot2)
+
+## input
+outcomes <- read.table("/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/immport2cytoscape/txp_immport2cytoscape_seq-merged-relive01_02_03_immport2tsv-noControls_outcomes_kidney.txt", sep = "\t", header = T, stringsAsFactors = F)
+
+## subsetting
+# those with no time points, excluding those lines with NA
+outcomes.notimepoints <- outcomes %>% 
+                    filter(eventA_min == 5000000000 | eventB_min == 5000000000) %>%
+                    filter(eventA_min != 5000000001 & eventB_min != 5000000001)
+# those with time points
+# this is my nw
+outcomes.wtimepoints <- outcomes %>% 
+                    filter(eventA_min != 5000000000 & eventB_min != 5000000000) %>%
+                    filter(eventA_min != 5000000001 & eventB_min != 5000000001)
+                    
+```
+
+
+# turning raw data to igraph object
+# node and edge definitions
+```{r}
+## create networks from outcomes with timepoints
+## also when time_min is >0 (posttx)
+nw.prefiltered <- outcomes.wtimepoints[c(1,3,2,4,5,6,7)]
+indivs.w.conditions.pretx <- nw.prefiltered %>% filter(eventA_min < 0 | eventB_min < 0)
+nw <- nw.prefiltered %>% filter(eventA_min >= 0 & eventB_min >= 0)
+names(nw) <- c("from","to","label","eventA_min","eventA_max","eventB_min","eventB_max")
+write.table(nw, file = "/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/filter_input_table_for_network.txt", sep = "\t", quote = F, row.names = F)
+
+## create network
+graph <- graph.data.frame(nw, directed=T)
+V(graph)$indegree <- centr_degree(graph, mode="in")$res
+
+## nodes
+nodes.labels <- read.table("/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/tx_LD_outcome_node_info.txt", header = T)
+names(nodes.labels) <- c("id","label","definition")
+
+nodes <- data.frame(id = unique(append(outcomes.wtimepoints$eventA, outcomes.wtimepoints$eventB)))
+nodes <- merge(nodes, nodes.labels, by="id") 
+
+nodes.indeg <- data.frame(id = V(graph)$name, in_degree = centr_degree(graph, mode="in")$res)
+nodes <- merge(nodes, nodes.indeg, by="id") %>% 
+            mutate(size = ifelse(in_degree <= 50, in_degree, 50))
+
+nodes$group <- c(rep(1,4),2,rep(1,5),2,rep(1,4),2,rep(1,4),2,1,2,rep(1,14))
+nodes$color <- c(rep(1,4),2,rep(1,5),2,rep(1,4),2,rep(1,4),2,1,2,rep(1,14))
+nodes$shape <- "dot"
+nodes$borderWidth <- 2 # Node border width
+
+# nodes$color.background <- c("slategrey", "tomato", "gold")[nodes$media.type]
+# nodes$color.border <- "black"
+# nodes$color.highlight.background <- "orange"
+# nodes$color.highlight.border <- "darkred"
+# nodes <- get.data.frame(graph, what="vertices")
+# nodes <- data.frame(id = nodes$name, title = nodes$name, group = nodes$indegree, indegree = nodes$indegree)
+# setnames(nodes, "indegree", "in-degree centrality")
+# nodes <- nodes[order(nodes$id, decreasing = F),]
+
+
+## edges
+
+# EDGES BY INDIV
+edges.by.indiv <- get.data.frame(graph, what="edges")
+edges.by.indiv <- edges.by.indiv %>% 
+                    mutate(length_full = eventB_min - eventA_min, 
+                           length = ifelse(length_full <= 1000, length_full, 1000))
+
+# EDGES BY WIDTH - width of edges = number of indiv
+edges.by.clust <- edges.by.indiv %>% 
+                    group_by(from,to) %>% 
+                    summarize(width=n())
+
+#color
+# colorCount = length(unique(edges.by.indiv$label))
+# colors = colorRampPalette(brewer.pal(9, "Set1"))
+# edges.by.indiv$color <- as.numeric(as.factor(edges.by.indiv$label))
+# 
+
+# edge by clustering -- where width = number of individuals
+edges.by.clust <- edges.by.indiv %>%
+                      group_by(from,to) %>% summarize(width_full=n()) %>%
+                      mutate(width = ifelse(width_full <= 50, width_full, 50))
+
+write.table(edges.by.clust, file = "/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/txp_immport2cytoscape.filtered.edgesbyclust.txt", sep = "\t", quote = F, row.names = F)
+
+
+# EDGES BY MEAN TIME
+edges.by.meantime <- edges.by.indiv %>% 
+                        mutate(newname = paste(from,"-",to, sep="")) %>%
+                        group_by(from,to) %>%
+                        summarize(length_full_median = median(length_full),
+                              length_full_mean = mean(length_full)) %>%
+                        mutate(length = ifelse(length_full_mean <= 1000, length_full_mean, 1000))
+                        
+edges.by.meantime <- merge(edges.by.meantime, nodes.labels, by.x = "from", by.y = "id")
+edges.by.meantime <- merge(edges.by.meantime, nodes.labels, by.x = "to", by.y = "id")
+
+##### calculate centrality of network
+# nw.betweenness <- as.data.frame(betweenness(graph))
+
+
+```
+
+# plot mean time vs node size from post-transplant (boxplot)
+```{r}
+o.ori <- read.table("/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/immport2cytoscape/txp_immport2outcomes-merged-relive01_02_03_immport2tsv-noControls_posttx_outcomes_kidney.txt", header = T, stringsAsFactors = F)
+
+
+o <- o.ori %>%
+        filter(!is.na(event_min) & !is.na(event_max)) %>%
+        filter(event_min >= 0)
+
+## add the tx node only on non-NA individuals
+tx <- data.frame(subject_ID=unique(o$subject_ID), event="transplant",event_min=0,event_max=0)
+o <- rbind(o, tx)
+
+o <- merge(o, nodes.labels, by.x = "event", by.y = "id")
+
+
+# plot violin plots
+# x axis      = edgelength
+# y axis      = label
+# bubble size = number of subjects with that event
+# edge length = mean time to event post transplant
+# o %>%
+#   ggplot(aes(x=event_min/365, y=label)) + 
+#   geom_point() +
+#   theme(legend.position = "none", 
+#         axis.text.x = element_text(size = 14, color = "black"),
+#         axis.text.y = element_text(size = 14)) + 
+#   theme(legend.position="right") + 
+#   # scale_fill_manual(values = colors, na.value = "white") +
+#   # scale_color_manual(values = colors, na.value = "white") + 
+#   labs(x="time from transplant (years)",y="post-donation outcomes") + 
+#   scale_size_area(max_size = 14) +
+#   theme(legend.title = element_text(size = 14, face="bold"), legend.text=element_text(size = 14)) +
+#   theme(axis.title.y = element_text(size = rel(1.5))) +
+#   theme(axis.title.x = element_text(size = rel(1.5)))
+```
+
+# plot mean time vs node size from post-transplant (bubble)
+```{r}
+# MEAN edge time
+# node size = number of individuals
+op <- o %>% 
+        group_by(event) %>%
+        summarize(nodesize = n(),
+                  edgelength_mean = mean(event_min),
+                  edgelength_median = median(event_min))
+op <- merge(op, nodes.labels, by.y = "id", by.x = "event")
+op <- op[order(op$edgelength_mean,-op$nodesize),]
+
+op$label <- factor(op$label, levels=op[rev(order(op$edgelength_mean,-op$nodesize)),]$label)
+op[op$event=="transplant", "nodesize"] <- 0 ## comment out this line to obtain size of transplant
+
+op$label_new <- paste(op$label," (",op$nodesize,")", sep="")
+op$label_new <- factor(op$label_new, levels=op[rev(order(op$edgelength_mean,op$nodesize)),]$label_new)
+
+write.table(op, file = "/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/txp_immport2cytoscape.outcome.nodeinfo.txt", sep = "\t", quote = F, row.names = F)
+
+
+# plot bubbles
+# x axis      = edgelength
+# y axis      = label
+# bubble size = number of subjects with that event
+# edge length = mean time to event post transplant
+op %>%
+  # ggplot(aes(x=edgelength_mean/365, y=label, size=nodesize)) + 
+  ggplot(aes(x=edgelength_mean/365, y=label, size=nodesize)) + ## y labels with size
+  # geom_point(shape = 23, fill = "black", color = "white") + ## diamonds not looking good
+  geom_point(shape = 21, fill = "black", color = "white") + ## circles
+  theme(legend.position = "none", 
+        axis.text.x = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 14)) + 
+  geom_vline(xintercept = 2, color = "slategrey", linetype = "dashed") + 
+  # scale_fill_manual(values = colors, na.value = "white") +
+  # scale_color_manual(values = colors, na.value = "white") + 
+  labs(x="time from transplant (years)",y="post-donation outcomes") + 
+  scale_size(breaks=c(10,50,100,200,800,1000), 
+             guide=guide_legend(title="living donors")) + ## legend with user-defined bubble sizes
+  # scale_size_area(max_size = 14) +
+  theme(legend.position="right") +
+  theme(legend.position="none") + ## no legend
+  theme(legend.title = element_text(size = 14, face="bold"), legend.text=element_text(size = 14)) +
+  theme(axis.title.y = element_text(size = rel(1.5))) +
+  theme(axis.title.x = element_text(size = rel(1.5))) + 
+  scale_x_continuous(limits = c(0,45))
+
+# # MEDIAN edge time ####
+# op <- op[order(op$edgelength_median,-op$nodesize),]
+# op$label <- factor(op$label, levels=op[rev(order(op$edgelength_median,-op$nodesize)),]$label)
+# 
+# op %>%
+#   ggplot(aes(x=edgelength_median/365, y=label, size=nodesize)) + 
+#   geom_point(shape = 21) +
+#   theme(legend.position = "none", 
+#         axis.text.x = element_text(size = 14, color = "black"),
+#         axis.text.y = element_text(size = 14)) + 
+#   theme(legend.position="right") + 
+#   # scale_fill_manual(values = colors, na.value = "white") +
+#   # scale_color_manual(values = colors, na.value = "white") + 
+#   labs(x="time from transplant (years)",y="post-donation outcomes") + 
+#   scale_size_area(max_size = 14) +
+#   theme(legend.title = element_text(size = 14, face="bold"), legend.text=element_text(size = 14)) +
+#   theme(axis.title.y = element_text(size = rel(1.5))) +
+#   theme(axis.title.x = element_text(size = rel(1.5)))
+
+
+```
+
+# plot mean time vs node size from post-transplant 2 (boxplot) 
+```{r}
+# plot boxplots
+# x axis      = edgelength
+# y axis      = label
+# bubble size = number of subjects with that event
+# edge length = mean time to event post transplant
+
+o <- merge(o, op) ## I want the edgelength whcih is the mean
+
+## reorder the levels; by MEAN (not MEDIAN)
+# o$label <- factor(o$label, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_median,-op$nodesize)),]$label)))
+# o$label_new <- factor(o$label_new, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_median,-op$nodesize)),]$label_new)))
+o$label <- factor(o$label, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_mean,op$nodesize)),]$label)))
+o$label_new <- factor(o$label_new, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_mean,op$nodesize)),]$label_new)))
+
+# only x can be factor, y has to be values
+o %>%
+  # ggplot(aes(y=event_min/365, x=label)) + 
+  ggplot(aes(y=event_min/365, x=label_new)) +  # y labels with size
+  geom_boxplot(aes(fill = "orange", color = "orange"), fatten = 0, width = 0.2) + ## fatten = 0 no median lines
+  # geom_point() +
+  # geom_violin() +
+  geom_hline(yintercept = 2, color = "slategrey", linetype = "dashed") + 
+  theme(legend.position = "none", 
+        axis.text.x = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 14)) + 
+  theme(legend.position="right") + 
+  # scale_fill_manual(values = colors, na.value = "white") +
+  # scale_color_manual(values = colors, na.value = "white") + 
+  labs(y="time from transplant (years)", x="post-donation outcomes") + 
+  scale_size_area(max_size = 14) +
+  theme(legend.position="none") + ## no legend
+  # theme(legend.title = element_text(size = 14, face="bold"), legend.text=element_text(size = 14)) +
+  theme(axis.title.y = element_text(size = rel(1.5))) +
+  theme(axis.title.x = element_text(size = rel(1.5))) + 
+  coord_flip()
+  
+``` 
+
+# plotting with igraph
+```{r}
+## set attributes
+## set indegree as vertex size
+V(graph)$size <- ifelse(centr_degree(graph, mode="in")$res > 50, 50, centr_degree(graph, mode="in")$res) 
+
+## plot
+c <- layout_in_circle(graph)
+s <- layout.spring(graph)
+
+# doing mds on the network using edge length as attribute
+e <- graph.edgelist(as.matrix(edges.by.indiv[,1:2]))
+E(e)$length <- edges.by.indiv$length
+adjm_edgelength <- get.adjacency(e, attr='length', sparse = F)
+m <- layout_with_mds(graph, dist = adjm_edgelength)
+
+# edges by meantime
+e2 <- graph.edgelist(as.matrix(edges.by.meantime[,1:2]))
+E(e2)$length <- edges.by.meantime$length
+adjm_edgelength2 <- get.adjacency(e2, attr='length', sparse = F)
+m2 <- layout_with_mds(graph, dist = adjm_edgelength2)
+
+# xycoordinates from ds.js
+xycoord <- read.table("/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/igraph/getCoordinates_in_graph_order.txt", header = F, stringsAsFactors = F)
+# weights <- c(-500,seq(17,1),0,seq(1,17),-500) * 2
+xycoord$V1 <- xycoord$V1 *10
+xycoord$V2 <- xycoord$V2 *10
+
+plot(graph, 
+     edge.arrow.size=.4, 
+     edge.curved=.1,
+     edge.label=NA,
+     arrow.mode = 2,
+     layout = m2)
+     # coords = xycoord,
+     # rescale = F,
+     # xlim = c(-1276, 1276),
+     # ylim = c(-522,360)) 
+
+## plot in interactive 2D graphics 
+# tkplot(graph, 
+#      edge.arrow.size=.4, 
+#      edge.curved=.1,
+#      edge.label=NA,
+#      arrow.mode = 2,
+#      layout = m,
+#      coords = xycoord,
+#      rescale = F,
+#      xlim = c(-1276, 1276),
+#      ylim = c(-522,360))
+
+# all possible layouts in igraph
+# layouts <- grep("^layout_", ls("package:igraph"), value=TRUE)[-1] 
+# layouts <- layouts[!grepl("bipartite|sugiyama", layouts)] # Remove layouts that do not apply to our graph.
+# par(mfrow=c(3,3), mar=c(1,1,1,1))
+# for (layout in layouts) {
+#   print(layout)
+#   l <- do.call(layout, list(graph)) 
+#   plot(graph, 
+#        edge.arrow.size=.4, 
+#        edge.label=NA, 
+#        edge.curved=.1, 
+#        arrow.mode=2, 
+#        layout=l, 
+#        main=layout, 
+#        dist = adjm_edgelength) 
+# }
+
+```
+
+# plotting interactive visualization with visNetwork: trajectory
+## 1) length is equal to accurate length of time from event A to B
+```{r}
+
+## to hide labels you have to change the column name
+edges.by.indiv <- edges.by.indiv %>% mutate(label_hide = label) 
+edges.by.indiv$label <- '' 
+
+
+visNetwork(nodes, edges.by.indiv) %>%
+  visOptions(selectedBy = "group", highlightNearest = TRUE, nodesIdSelection = TRUE) %>% # menu for nodes
+  visPhysics(stabilization = FALSE) %>% 
+  visNodes(font = list(size = 30)) %>%
+  visEdges(arrows = "to") %>% ## hide labels by replacing column name "label" to something else
+  visHierarchicalLayout(direction = "LR")  %>% # same as visLayout(hierarchical = TRUE)  
+  visInteraction(dragNodes = TRUE, navigationButtons = TRUE,
+                 dragView = TRUE, 
+                 zoomView = TRUE) 
+
+# visSave(g, file="/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/igraph/test.html", selfcontained = TRUE, background = "white")
+```
+
+## 2) edges are by mean time
+```{r}
+
+## to hide labels you have to change the column name
+# edges.by.meantime <- edges.by.meantime
+# edges.by.meantime$label <- '' 
+
+
+visNetwork(nodes, edges.by.meantime) %>%
+  visOptions(selectedBy = "group", highlightNearest = TRUE, nodesIdSelection = TRUE) %>% # menu for nodes
+  visPhysics(stabilization = FALSE) %>% 
+  visNodes(font = list(size = 30)) %>%
+  visEdges(arrows = "to") %>% ## hide labels by replacing column name "label" to something else
+  visHierarchicalLayout(direction = "LR")  %>% # same as visLayout(hierarchical = TRUE)  
+  visInteraction(dragNodes = TRUE, navigationButtons = TRUE,
+                 dragView = TRUE, 
+                 zoomView = TRUE) 
+
+# visSave(g, file="/Users/jiemingchen/Documents/transplantation/a_donor/immport/network_traj_analyses/igraph/test.html", selfcontained = TRUE, background = "white")
+```
+
+## 3) length is hidden = length does not mean anything
+```{r}
+edges.by.indiv2 <- edges.by.indiv %>% 
+  rename(length_hide = length)
+
+visNetwork(nodes, edges.by.indiv2) %>%
+  visOptions(selectedBy = "group", highlightNearest = TRUE, nodesIdSelection = TRUE) %>% # menu for nodes
+  visPhysics(stabilization = FALSE) %>% 
+  visNodes(font = list(size = 30)) %>%
+  visEdges(arrows = "to") %>% 
+  visHierarchicalLayout(direction = "LR")  %>% # same as visLayout(hierarchical = TRUE)  
+  visInteraction(dragNodes = TRUE, navigationButtons = TRUE,
+                 dragView = TRUE, 
+                 zoomView = TRUE)
+
+```
+
+## 4) edges by cluster -- where width = number of individuals
+```{r}
+
+visNetwork(nodes, edges.by.clust) %>%
+  visOptions(selectedBy = "group", highlightNearest = TRUE, nodesIdSelection = TRUE) %>% # menu for nodes
+  visPhysics(stabilization = FALSE) %>% 
+  visNodes(font = list(size = 30)) %>%
+  visEdges(arrows = "to") %>% 
+  visHierarchicalLayout(direction = "LR")  %>% # same as visLayout(hierarchical = TRUE)  
+  # visIgraphLayout(layout = "layout_in_circle")  %>%
+  visInteraction(dragNodes = TRUE, navigationButtons = TRUE,
+                 dragView = TRUE, 
+                 zoomView = TRUE)
+
+visNetwork(nodes, edges.by.clust) %>%
+  visOptions(selectedBy = "in_degree", highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visPhysics(stabilization = FALSE) %>% 
+  visEdges(arrows = "to") %>% 
+  visHierarchicalLayout(direction = "LR") # same as   visLayout(hierarchical = TRUE)
+
+```
+
+# traversing one subject: wip
+```{r}
+## traverse one subject: SUB130359
+visNetwork(nodes, edges.by.indiv) %>%
+  visOptions(selectedBy = "group", highlightNearest = TRUE, nodesIdSelection = TRUE) %>% # menu for nodes
+  visPhysics(stabilization = FALSE) %>% 
+  visNodes(font = list(size = 30)) %>%
+  visEdges(arrows = "to", label = F) %>% 
+  visHierarchicalLayout(direction = "LR")  %>% # same as visLayout(hierarchical = TRUE)  
+  visInteraction(dragNodes = TRUE, navigationButtons = TRUE,
+                 dragView = TRUE, 
+                 zoomView = TRUE)
+```
+
+# histograms of edge and node distribution to set threshold to cut max 
+```{r}
+
+## edge length distribution
+hist(edges.by.indiv$length)
+hist(edges.by.indiv[edges.by.indiv$length < 1000,]$length)
+edges.by.indiv <- edges.by.indiv %>% mutate(length_mod = ifelse(length <= 1000, length, 1000))
+
+## node size distribution
+hist(nodes$in_degree)
+hist(nodes[nodes$in_degree < 100,]$in_degree)
+
+## edge width distribution
+hist(edges.by.clust$width)
+```
+
+# just a hairball
+```{r}
+
+# visNetwork(nodes,edges, width="100%", height="400px", main="tx_LD_outcomes")
+# nodes
+# nodes <- as.data.frame(unique(melt(cbind(outcomes.wtimepoints$eventA, outcomes.wtimepoints$eventB))$value))
+# names(nodes) <- c('id')
+# 
+# # edges
+# edges <- outcomes.wtimepoints[c(1,3,2,4,5,6,7)]
+# names(edges) <- c("from","to","label","eventA_min","eventA_max","eventB_min","eventB_max")
+# nodes$shape <- "dot"  
+# nodes$shadow <- TRUE # Nodes will drop shadow
+# nodes$title <- nodes$media # Text on click
+# nodes$label <- nodes$type.label # Node label
+# nodes$size <- nodes$audience.size # Node size
+# nodes$borderWidth <- 2 # Node border width
+# 
+# # nodes$color.background <- c("slategrey", "tomato", "gold")[nodes$media.type]
+# nodes$color.border <- "black"
+# nodes$color.highlight.background <- "orange"
+# nodes$color.highlight.border <- "darkred"
+# 
+# visNetwork(nodes, edges) 
+```

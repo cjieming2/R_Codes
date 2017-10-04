@@ -1,0 +1,345 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Visualization with R - packages, colors and transparencies
+```{r}
+#### packages
+library("igraph") 
+library("network") 
+library("sna")
+library("visNetwork")
+library("threejs")
+library("networkD3")
+library("ndtv")
+library('RColorBrewer')
+
+#### colors
+plot(x=1:10, y=rep(5,10), pch=19, cex=3, col="dark red")
+points(x=1:10, y=rep(6, 10), pch=19, cex=3, col="557799")
+points(x=1:10, y=rep(4, 10), pch=19, cex=3, col=rgb(.25, .5, .3))
+
+## listing colors
+colors()                          # List all named colors
+grep("blue", colors(), value=T)   # Colors that have "blue" in the name
+pal1 <- heat.colors(5, alpha=1)   #  5 colors from the heat palette, opaque
+pal2 <- rainbow(5, alpha=.5)      #  5 colors from the heat palette, transparent
+plot(x=1:10, y=1:10, pch=19, cex=5, col=pal1)
+plot(x=1:10, y=1:10, pch=19, cex=5, col=pal2)
+
+## generate our own colors : colorRampPalette
+palf <- colorRampPalette(c("gray80", "dark red")) 
+plot(x=10:1, y=1:10, pch=19, cex=5, col=palf(10)) 
+palf <- colorRampPalette(c(rgb(1,1,1, .2),rgb(.8,0,0, .7)), alpha=TRUE)
+plot(x=10:1, y=1:10, pch=19, cex=5, col=palf(10)) 
+
+## built-in colors : RColorBrewer
+display.brewer.all()
+display.brewer.pal(8, "Set3")
+display.brewer.pal(8, "Spectral")
+display.brewer.pal(8, "Blues")
+
+pal3 <- brewer.pal(10, "Set3")
+plot(x=10:1, y=10:1, pch=19, cex=6, col=pal3)
+plot(x=10:1, y=10:1, pch=19, cex=6, col=rev(pal3)) # backwards
+
+
+####################################
+#### opacity : alpha
+plot(x=1:5, y=rep(5,5), pch=19, cex=12, col=rgb(.25, .5, .3, alpha=.5), xlim=c(0,6))
+
+## If we have a hex color representation, we can set the transparency alpha using adjustcolor from package grDevices
+par(bg="gray40")
+col.tr <- grDevices::adjustcolor("557799", alpha=0.7)
+plot(x=1:5, y=rep(5,5), pch=19, cex=12, col=col.tr, xlim=c(0,6))
+```
+
+# fonts
+```{r}
+plot(x=10:1, y=10:1, pch=19, cex=3, 
+     main="This is a plot", col="orange", 
+     family="Arial Black" )
+
+# First you may have to let R know where to find ghostscript on your machine:
+#Sys.setenv(R_GSCMD = "C:/Program Files/gs/gs9.21/bin/gswin64c.exe")
+
+# pdf() will send all the plots we output before dev.off() to a pdf file: 
+#pdf(file="ArialBlack.pdf")
+plot(x=10:1, y=10:1, pch=19, cex=6, 
+     main="This is a plot", col="orange", 
+     family="Arial Black" )
+#dev.off()
+
+#embed_fonts("ArialBlack.pdf", outfile="ArialBlack_embed.pdf")
+```
+# Dataset 1: input = edgelist
+```{r}
+#### dataset 1 
+nodes <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset1-Media-Example-NODES.csv", header=T, as.is=T)
+links <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset1-Media-Example-EDGES.csv", header=T, as.is=T)
+
+## we have cases in the data where there are multiple links between the same two nodes. 
+## so collapse/aggregate all links of the same type between the same two nodes by summing their weights
+links <- aggregate(links[,3], links[,-3], sum)
+links <- links[order(links$from, links$to),]
+colnames(links)[4] <- "weight"
+rownames(links) <- NULL
+
+## turning networks into igraph objects
+## D or U, for a directed or undirected graph
+## N for a named graph (where nodes have a name attribute)
+## W for a weighted graph (where edges have a weight attribute)
+## B for a bipartite (two-mode) graph (where nodes have a type attribute)
+## The two numbers that follow (17 49) refer to the number of nodes and edges in the graph. The description also lists node & edge attributes, for example:
+## (g/c) - graph-level character attribute
+## (v/c) - vertex-level character attribute
+## (e/n) - edge-level numeric attribute
+net <- graph_from_data_frame(d=links, vertices=nodes, directed=T) 
+net
+
+## to look at the network
+E(net)       # The edges of the "net" object
+V(net)       # The vertices of the "net" object
+E(net)$type  # Edge attribute "type"
+V(net)$media # Vertex attribute "media"
+
+# Find nodes and edges by attribute:
+# (that returns oblects of type vertex sequence/edge sequence)
+V(net)[media=="BBC"]
+E(net)[type=="mention"]
+
+# You can also examine the network matrix directly:
+net[1,]
+net[5,7]
+
+# Get an edge list or a matrix:
+as_edgelist(net, names=T)
+as_adjacency_matrix(net, attr="weight")
+
+# Or data frames describing nodes and edges:
+as_data_frame(net, what="edges")
+as_data_frame(net, what="vertices")
+
+plot(net) # not a pretty picture!
+
+```
+# Dataset 1: (cont'd) making more pretty pics
+```{r}
+## remove loops in figure above
+net <- simplify(net, remove.multiple = F, remove.loops = T) 
+
+## reduce arrow size and remove labels (set them to NA)
+plot(net, edge.arrow.size=.4,vertex.label=NA)
+
+# Plot with curved edges (edge.curved=.1) and reduce arrow size:
+# Note that using curved edges will allow you to see multiple links
+# between two nodes (e.g. links going in either direction, or multiplex links)
+plot(net, edge.arrow.size=.4, edge.curved=.1)
+
+# Set edge color to light gray, the node & border color to orange 
+# Replace the vertex label with the node names stored in "media"
+plot(net, edge.arrow.size=.2, edge.color="orange",
+     vertex.color="orange", vertex.frame.color="#ffffff",
+     vertex.label=V(net)$media, vertex.label.color="black") 
+
+
+#### color our network nodes based on type of media
+#### size them based on degree centrality (more links -> larger node) 
+#### change the width of the edges based on their weight
+# Generate colors based on media type:
+colrs <- c("gray50", "tomato", "gold")
+V(net)$color <- colrs[V(net)$media.type]
+
+# Compute node degrees (#links) and use that to set node size:
+# note add igraph:: because there are 2 versions of degree
+deg <- igraph::degree(net, mode="all")
+V(net)$size <- deg*3
+# We could also use the audience size value:
+V(net)$size <- V(net)$audience.size*0.6
+
+# The labels are currently node IDs.
+# Setting them to NA will render no labels:
+V(net)$label <- NA
+
+# Set edge width based on weight:
+E(net)$width <- E(net)$weight/6
+
+# change arrow size and edge color:
+E(net)$arrow.size <- .2
+E(net)$edge.color <- "gray80"
+E(net)$width <- 1+E(net)$weight/12
+plot(net) 
+
+# this overrides the above in edge.color and vertex.color
+# attributes, see plotting parameters below
+plot(net, edge.color="orange", vertex.color="gray50") 
+
+# add legend
+plot(net) 
+legend(x=-1.5, y=-1.1, c("Newspaper","Television", "Online News"), pch=21,
+       col="#777777", pt.bg=colrs, pt.cex=2, cex=.8, bty="n", ncol=1)
+
+## different style with only labels for nodes
+plot(net, vertex.shape="none", vertex.label=V(net)$media, 
+     vertex.label.font=2, vertex.label.color="gray40",
+     vertex.label.cex=.7, edge.color="gray85")
+
+## color the edges of the graph based on their source node color. 
+## get the starting node for each edge with the  ends() igraph function: It returns the start and end vertex for edges listed in the es parameter. The names parameter control whether the function returns edge names or IDs.
+edge.start <- ends(net, es=E(net), names=F)[,1]
+edge.col <- V(net)$color[edge.start]
+
+plot(net, edge.color=edge.col, edge.curved=.1)  
+```
+# network layouts
+```{r}
+## all available layouts
+layouts <- grep("^layout_", ls("package:igraph"), value=TRUE)[-1] 
+# Remove layouts that do not apply to our graph.
+layouts <- layouts[!grepl("bipartite|merge|norm|sugiyama|tree", layouts)]
+
+par(mfrow=c(3,3), mar=c(1,1,1,1))
+for (layout in layouts) {
+  print(layout)
+  l <- do.call(layout, list(net)) 
+  plot(net, edge.arrow.mode=0, layout=l, main=layout) }
+```
+
+# some layout examples
+```{r}
+### Barabasi-Albert model with sample_pa(n), n = #nodes
+net.bg <- sample_pa(80) 
+V(net.bg)$size <- 8
+V(net.bg)$frame.color <- "white"
+V(net.bg)$color <- "orange"
+V(net.bg)$label <- "" 
+E(net.bg)$arrow.mode <- 0
+plot(net.bg)
+
+### random layout
+plot(net.bg, layout=layout_randomly)
+
+# or
+l <- layout_randomly(net.bg)
+plot(net.bg, layout=l)
+
+### circular layout
+l <- layout_in_circle(net.bg)
+plot(net.bg, layout=l)
+
+### layout with fixed coordinates
+l <- cbind(1:vcount(net.bg), c(1, vcount(net.bg):2))
+plot(net.bg, layout=l)
+
+### 3D sphere layout
+l <- layout_on_sphere(net.bg)
+plot(net.bg, layout=l)
+```
+
+# Force-directed layouts
+```{r}
+### Fruchterman-Reingold is one of the most used force-directed layout algorithms out there.
+### Force-directed layouts try to get a nice-looking graph where edges are similar in length and cross each other as little as possible
+### They simulate the graph as a physical system. Nodes are electrically charged particles that repulse each other when they get too close. The edges act as springs that attract connected nodes closer together. As a result, nodes are evenly distributed through the chart area, and the layout is intuitive in that nodes which share more connections are closer to each other. The disadvantage of these algorithms is that they are rather slow and therefore less often used in graphs larger than ~1000 vertices. You can set the “weight” parameter which increases the attraction forces among nodes connected by heavier edges.
+### You will notice that this layout is not deterministic - different runs will result in slightly different configurations
+l <- layout_with_fr(net.bg)
+plot(net.bg, layout=l)
+
+## You will notice that this layout is not deterministic - different runs will result in slightly different configurations. 
+par(mfrow=c(2,2), mar=c(0,0,0,0))   # plot four figures - 2 rows, 2 columns
+plot(net.bg, layout=layout_with_fr)
+plot(net.bg, layout=layout_with_fr)
+plot(net.bg, layout=l)
+plot(net.bg, layout=l)
+dev.off()
+
+
+### Kamada Kawai force directed
+### Like Fruchterman Reingold, it attempts to minimize the energy in a spring system.
+l <- layout_with_kk(net.bg)
+plot(net.bg, layout=l)
+
+### The LGL algorithm is meant for large, connected graphs. 
+### Here you can also specify a root: a node that will be placed in the middle of the layout.
+plot(net.bg, layout=layout_with_lgl)
+```
+
+# MDS (multidimensional scaling) algorithm
+```{r}
+## tries to place nodes based on some measure of similarity or distance between them. More similar nodes are plotted closer to each other. By default, the measure used is based on the shortest paths between nodes in the network. We can change that by using our own distance matrix (however defined) with the parameter  dist. MDS layouts are nice because positions and distances have a clear interpretation. The problem with them is visual clarity: nodes often overlap, or are placed on top of each other.
+plot(net.bg, layout=layout_with_mds)
+```
+
+# Dataset 2: input = matrix format
+```{r}
+#### dataset 2
+nodes2 <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset2-Media-User-Example-NODES.csv", header=T, as.is=T)
+links2 <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset2-Media-User-Example-EDGES.csv", header=T, row.names=1)
+
+head(nodes2)
+head(links2)
+
+links2 <- as.matrix(links2)
+dim(links2)
+dim(nodes2)
+
+## read network using graph_from_incidence
+## In igraph, bipartite networks have a node attribute called type that is FALSE (or 0) for vertices in one mode and TRUE (or 1) for those in the other mode.
+## To transform a one-mode network matrix into an igraph object, use graph_from_adjacency_matrix().
+net2 <- graph_from_incidence_matrix(links2)
+table(V(net2)$type)
+```
+# interactive networks
+```{r}
+# install.packages('animation')
+# install.packages('visNetwork')
+library('visNetwork') 
+library('animation') 
+library('igraph')
+
+visNetwork(nodes, links, width="100%", height="400px", main="Network!")
+```
+
+# plotting parameters
+```{r}
+
+## ?igraph.plotting for more information.
+## NODES	 
+# vertex.color	 Node color
+# vertex.frame.color	 Node border color
+# vertex.shape	 One of “none”, “circle”, “square”, “csquare”, “rectangle”
+#  “crectangle”, “vrectangle”, “pie”, “raster”, or “sphere”
+# vertex.size	 Size of the node (default is 15)
+# vertex.size2	 The second size of the node (e.g. for a rectangle)
+# vertex.label	 Character vector used to label the nodes
+# vertex.label.family	 Font family of the label (e.g.“Times”, “Helvetica”)
+# vertex.label.font	 Font: 1 plain, 2 bold, 3, italic, 4 bold italic, 5 symbol
+# vertex.label.cex	 Font size (multiplication factor, device-dependent)
+# vertex.label.dist	 Distance between the label and the vertex
+# vertex.label.degree	 The position of the label in relation to the vertex, where
+#  0 is right, “pi” is left, “pi/2” is below, and “-pi/2” is above
+# EDGES
+# edge.color	 Edge color
+# edge.width	 Edge width, defaults to 1
+# edge.arrow.size	 Arrow size, defaults to 1
+# edge.arrow.width	 Arrow width, defaults to 1
+# edge.lty	 Line type, could be 0 or “blank”, 1 or “solid”, 2 or “dashed”,
+#  3 or “dotted”, 4 or “dotdash”, 5 or “longdash”, 6 or “twodash”
+# edge.label	 Character vector used to label edges
+# edge.label.family	 Font family of the label (e.g.“Times”, “Helvetica”)
+# edge.label.font	 Font: 1 plain, 2 bold, 3, italic, 4 bold italic, 5 symbol
+# edge.label.cex	 Font size for edge labels
+# edge.curved	 Edge curvature, range 0-1 (FALSE sets it to 0, TRUE to 0.5)
+# arrow.mode	 Vector specifying whether edges should have arrows,
+#  possible values: 0 no arrow, 1 back, 2 forward, 3 both
+# OTHER
+# margin	 Empty space margins around the plot, vector with length 4
+# frame	 if TRUE, the plot will be framed
+# main	 If set, adds a title to the plot
+# sub	 If set, adds a subtitle to the plot
+# asp	  Numeric, the aspect ratio of a plot (y/x).
+# palette	 A color palette to use for vertex color
+# rescale	 Whether to rescale coordinates to [-1,1]. Default is TRUE.
+
+```

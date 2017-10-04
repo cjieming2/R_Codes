@@ -1,0 +1,37 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+## using loop with a list of manually keyed in functions
+```{r}
+library(ggplot2)
+p <- ggplot(data.frame(x=c(0,1000)),aes(x=x))  #just to set x range
+funcs <- list(function(x) 1*x+10, function(x) 2*x+20, function(x) 3*x+30,function(x) 4*x+40,function(x) 5*x+50) #the list of functions, but done MANUALLY
+for(i in 1:length(funcs))
+p <- p + stat_function(fun = funcs[[i]], colour='blue')
+print(p)
+  
+```
+## using loop but if the functions are the same, do it with the loop (non-manual)
+```{r}
+## inspiration from this website:
+## http://t-redactyl.io/blog/2016/03/creating-plots-in-r-using-ggplot2-part-9-function-plots.html
+library(ggplot2)
+p <- ggplot(data.frame(x=c(0,1000)),aes(x=x))  ## just to set x range
+n = 5 ## loop this number of times
+f <- function(x,a,b) { a*x + b } ## function without evaluation
+
+a <- c(1,2,3,4,5)
+b <- c(10,20,30,40,50)
+
+for(i in 1:length(a)) ## note the loop is internal to the stat_function so no squiggly brackets {} 
+p <- p + stat_function(fun = f, args = list(a[i],b[i]), colour='blue') ## stat_function plots functions
+print(p)
+
+```
+

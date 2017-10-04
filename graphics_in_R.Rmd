@@ -1,0 +1,107 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Visualization with R - packages, colors and transparencies
+```{r}
+#### packages
+library("igraph") 
+library("network") 
+library("sna")
+library("visNetwork")
+library("threejs")
+library("networkD3")
+library("ndtv")
+library('RColorBrewer')
+
+#### colors
+plot(x=1:10, y=rep(5,10), pch=19, cex=3, col="dark red")
+points(x=1:10, y=rep(6, 10), pch=19, cex=3, col="557799")
+points(x=1:10, y=rep(4, 10), pch=19, cex=3, col=rgb(.25, .5, .3))
+
+## listing colors
+colors()                          # List all named colors
+grep("blue", colors(), value=T)   # Colors that have "blue" in the name
+pal1 <- heat.colors(5, alpha=1)   #  5 colors from the heat palette, opaque
+pal2 <- rainbow(5, alpha=.5)      #  5 colors from the heat palette, transparent
+plot(x=1:10, y=1:10, pch=19, cex=5, col=pal1)
+plot(x=1:10, y=1:10, pch=19, cex=5, col=pal2)
+
+## generate our own colors : colorRampPalette
+palf <- colorRampPalette(c("gray80", "dark red")) 
+plot(x=10:1, y=1:10, pch=19, cex=5, col=palf(10)) 
+palf <- colorRampPalette(c(rgb(1,1,1, .2),rgb(.8,0,0, .7)), alpha=TRUE)
+plot(x=10:1, y=1:10, pch=19, cex=5, col=palf(10)) 
+
+## built-in colors : RColorBrewer
+display.brewer.all()
+display.brewer.pal(8, "Set3")
+display.brewer.pal(8, "Spectral")
+display.brewer.pal(8, "Blues")
+
+pal3 <- brewer.pal(10, "Set3")
+plot(x=10:1, y=10:1, pch=19, cex=6, col=pal3)
+plot(x=10:1, y=10:1, pch=19, cex=6, col=rev(pal3)) # backwards
+
+
+####################################
+#### opacity : alpha
+plot(x=1:5, y=rep(5,5), pch=19, cex=12, col=rgb(.25, .5, .3, alpha=.5), xlim=c(0,6))
+
+## If we have a hex color representation, we can set the transparency alpha using adjustcolor from package grDevices
+par(bg="gray40")
+col.tr <- grDevices::adjustcolor("557799", alpha=0.7)
+plot(x=1:5, y=rep(5,5), pch=19, cex=12, col=col.tr, xlim=c(0,6))
+```
+
+# fonts
+```{r}
+plot(x=10:1, y=10:1, pch=19, cex=3, 
+     main="This is a plot", col="orange", 
+     family="Arial Black" )
+
+# First you may have to let R know where to find ghostscript on your machine:
+#Sys.setenv(R_GSCMD = "C:/Program Files/gs/gs9.21/bin/gswin64c.exe")
+
+# pdf() will send all the plots we output before dev.off() to a pdf file: 
+#pdf(file="ArialBlack.pdf")
+plot(x=10:1, y=10:1, pch=19, cex=6, 
+     main="This is a plot", col="orange", 
+     family="Arial Black" )
+#dev.off()
+
+#embed_fonts("ArialBlack.pdf", outfile="ArialBlack_embed.pdf")
+```
+# Dataset 1: edgelist
+```{r}
+#### dataset 1 
+nodes <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset1-Media-Example-NODES.csv", header=T, as.is=T)
+links <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset1-Media-Example-EDGES.csv", header=T, as.is=T)
+
+## we have cases in the data where there are multiple links between the same two nodes. 
+## so collapse/aggregate all links of the same type between the same two nodes by summing their weights
+links <- aggregate(links[,3], links[,-3], sum)
+links <- links[order(links$from, links$to),]
+colnames(links)[4] <- "weight"
+rownames(links) <- NULL
+
+## turning networks into igraph objects
+net <- graph_from_data_frame(d=links, vertices=nodes, directed=T) 
+net
+
+```
+
+# Dataset 2: matrix
+```{r}
+#### dataset 2
+nodes2 <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset2-Media-User-Example-NODES.csv", header=T, as.is=T)
+links2 <- read.csv("/Users/jiemingchen/R_codes/polnet2017_networks_tutorial/Data files/Dataset2-Media-User-Example-EDGES.csv", header=T, row.names=1)
+
+head(nodes2)
+head(links2)
+
+links2 <- as.matrix(links2)
+dim(links2)
+dim(nodes2)
+```

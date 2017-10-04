@@ -1,0 +1,660 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# library and function
+```{r}
+## my own library
+source("/Users/jiemingchen/R_codes/jmRlib.R")
+
+library(RImmPort)
+library(DBI)
+library(sqldf)
+library(dplyr)
+library(RMySQL)
+library(ggplot2)
+library(gridExtra)
+library(gapminder)
+library(plyr)
+library(RColorBrewer)
+
+## plot and save function
+plot_age_sex <- function(data,flag,range) {
+  names(data)[names(data)=="Patient_Sex"]  <- "Sex"
+  names(data)[names(data)=="Donation_Age"]  <- "AGE"
+  names(data)[names(data)=="Patient_Race2"]  <- "RACE"
+  
+  ## this is a histogram, age 40 is considered at bin 39; uses un-ddply a - nope
+  # pmain = ggplot(data=data, aes(x=round(data$AGE), fill=Sex))
+  # phisto = geom_histogram(breaks=seq(min(round(data$AGE)),round(max(data$AGE)),by=1), position = "dodge")
+  
+  ## this groups each age group as a category and then takes 15 min to plot!! uses ddply b -- nope
+  # pmain = ggplot(b,aes(x=SEX,y=count,fill=Organ))
+  # phisto = geom_bar(stat = "identity",color="white") + facet_wrap(~AGE,nrow=1)
+  
+  if(flag == 1)
+  {
+    ############
+    # this one b1 
+    pmain = ggplot(data=data, aes(x=AGE, y=count, fill=Sex))
+    phisto = geom_bar(stat="identity", position = position_dodge())
+    plabels = labs(x="Age",y="Count")
+    pticks = scale_x_continuous(breaks=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                  axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                  axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+    ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+    plegend = theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+    
+    myplot = pmain + phisto + plabels + pticks + paxes + ptitle + plegend
+    return(myplot)
+  } else if(flag == 2)
+  {
+    ########
+    ## this plots each x axis as an interaction of age and sex and then adjust label for age
+    ## order of Sex and AGE matter - uses b
+    ## plots organ with this data
+    pmain = ggplot(data, aes(x = as.numeric(interaction(Sex,AGE)), y=count, fill=ORGAN))
+    phisto = geom_bar(stat = "identity") 
+    plabels = labs(x="Age",y="Count")
+    # pticks = scale_x_continuous(breaks=range, labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    #pticks = scale_x_continuous(breaks=range,labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    # pticks = scale_x_continuous() ##debug
+    paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                  axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                  axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+    ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+    plegend = theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+    
+    pcolor = scale_fill_manual(values=c("#00BA38","#F8766D","#619CFF")) ## only for donors
+    myplot = pmain + phisto + plabels + paxes + ptitle + plegend + pcolor
+    return(myplot)
+  } else
+  {
+    ########
+    ## this plots each x axis as an interaction of age and sex and then adjust label for age
+    ## order of Sex and AGE matter - uses b
+    ## plots study with this data
+    pmain = ggplot(data, aes(x = as.numeric(interaction(Sex,AGE)), y=count, fill=RACE))
+    phisto = geom_bar(stat = "identity") 
+    plabels = labs(x="Age",y="Count")
+    # pticks = scale_x_continuous(breaks=range, labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    #pticks = scale_x_continuous(breaks=range,labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    # pticks = scale_x_continuous() ##debug
+    paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                  axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                  axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+    ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+    plegend = theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+    
+    # pcolor = scale_fill_manual(values=c("#00BA38","#F8766D","#619CFF")) ## only for donors
+    myplot = pmain + phisto + plabels + paxes + ptitle + plegend
+    return(myplot)
+  }
+}
+```
+
+
+#------ COMPARING IMMPORT, EHR and UNOS/OPTN ------ 
+## input data
+```{r}
+##-----------------------------------------------------------
+## input data
+# extract only kidney
+# fsieve -s /Users/jiemingchen/Documents/transplantation/a_donor/immport/finals.iTx/final.iTx.DM.v15.nonkidneyLDs.txt combined_emr_immport_unos-all-updated-stand.txt -m 
+idata <- read.table("/Users/jiemingchen/Documents/transplantation/a_donor/combined/sieved-combined_emr_immport_unos-all-updated-stand.txt", header = T, sep = "\t")
+a.d <- idata[!is.na(idata$Donation_Age) & !is.na(idata$Sex),]
+
+
+
+
+
+b3.dd <- mutate(a.d, source_sex = paste(Data_Source, "_", Sex, sep = ""))
+b3.dd <- ddply(.data=b3.dd, .variables="Data_Source", .fun=transform, sum.n = length(Data_Source))
+b3.dd <- ddply(.data=b3.dd, .variables="source_sex", .fun=transform, sum.sex.n = length(source_sex),
+                                                                     median.sex.n = median(Donation_Age))
+
+b3.d1 <- ddply(.data = b3.dd, .variables = c("Sex","Data_Source"), .fun=summarise, 
+           count = length(Data_Source),
+           proportion = count/sum.n[1])
+
+b3.d2 <- ddply(.data = b3.dd, .variables = c("Donation_Age","Sex","Data_Source"), .fun=summarise, 
+           count = length(Donation_Age),
+           proportion = count/sum.n[1],
+           proportion.sex = count/sum.sex.n[1])
+```
+
+
+## gender
+### proportion plot
+```{r}
+
+b3.d1 %>%
+  ggplot(aes(Sex, proportion, fill = Sex)) +
+  geom_bar(stat = "identity") +
+  facet_grid(Data_Source ~., scale = "fixed") + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) + 
+  scale_fill_brewer(palette = "Set1")
+
+```
+
+### line plot
+```{r}
+## PLOT split by dataset; plot by age and sex using ggplot2; line plot proportion by total in dataset
+b3.d2 %>% 
+  ggplot(aes(Donation_Age, proportion, color = Sex)) +
+  # ggplot(aes(Donation_Age, proportion.sex, color = Sex)) +
+  geom_line(size=1.5) +
+  facet_grid(Data_Source ~., scale = "free_y") +
+  labs(x="Age",y="Proportion") +
+  scale_x_continuous(breaks=seq(min(b3.d2$Donation_Age),max(b3.d2$Donation_Age),by=5)) +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+        axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+        axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) +
+  geom_vline(xintercept = b3.dd$median.sex.n, color = "red") + ## use illustrator to do this individually
+  scale_color_brewer(palette = "Set1")
+
+## medians to check
+unique(b3.dd %>% select(source_sex, median.sex.n))
+median(b3.dd[b3.dd$Sex == "Female" & b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
+median(b3.dd[b3.dd$Sex == "Male" & b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
+median(b3.dd[b3.dd$Sex == "Female" & b3.dd$Data_Source == "UCSF_EMR",]$Donation_Age)
+median(b3.dd[b3.dd$Sex == "Male" & b3.dd$Data_Source == "UCSF_EMR",]$Donation_Age)
+median(b3.dd[b3.dd$Sex == "Female" & b3.dd$Data_Source == "UNOS_OPTN",]$Donation_Age)
+median(b3.dd[b3.dd$Sex == "Male" & b3.dd$Data_Source == "UNOS_OPTN",]$Donation_Age)
+median(b3.dd[b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
+
+```
+
+### bar plot
+```{r}
+# ## PLOT split by dataset; plot by age and sex using ggplot2; BARS
+# pmain <- ggplot(b3.d2, aes(Donation_Age, count, fill = Sex))
+# # pmain <- ggplot(b3.d[b3.d$Sex != "Not_Specified", ], aes(Donation_Age, count, fill = Sex)) ## remove unknown sex
+# phisto <- geom_bar(stat = "identity", position=position_dodge())
+# pfacet <- facet_grid(Data_Source ~., scale = "free_y") 
+# plabels <- labs(x="Age",y="Count")
+# pticks <- scale_x_continuous(breaks=seq(min(b3.d2$Donation_Age),max(b3.d2$Donation_Age),by=1))
+# paxes <- theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+#               axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+#               axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+# ptitle <- theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+# plegend <- theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+# pmain + phisto + pfacet + plabels + pticks + paxes + ptitle + plegend + scale_fill_brewer(palette = "Set1")
+# # savePlot("plot_combined_immport_emr_unos-jun2016_age_sex_kidney_donors_bars.png", type = "png")
+
+```
+
+
+### stats test -- use KS test
+```{r}
+immport.b3 <- b3.d2[b3.d2$Data_Source == "ImmPort_DR19",]
+imm.t <- sum(immport.b3$count)
+unosopt.b3 <- b3.d2[b3.d2$Data_Source == "UNOS_OPTN",]
+unos.t <- sum(unosopt.b3$count)
+ucsfemr.b3 <- b3.d2[b3.d2$Data_Source == "UCSF_EMR",]
+emr.t <- sum(ucsfemr.b3$count)
+```
+
+### within immport
+```{r}
+imm.f <- immport.b3[immport.b3$Sex=="Female",]
+imm.m <- immport.b3[immport.b3$Sex=="Male",]
+
+a <- merge(imm.f, imm.m, by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+prob.x <- a$count.x/imm.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+```
+
+#### merge immport and unos
+```{r}
+## FEMALE
+a <- merge(unosopt.b3[unosopt.b3$Sex=="Female",], immport.b3[immport.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+## chi sq test, expected = unos
+# z <- a[a$count.x>20 & a$count.y>20,]
+# prob.y <- z$count.y/sum(z$count.y)
+# chisq.test(z$count.x, prob.y) ## x can be count data, but y needs to be proportion NOT counts
+
+## KS test
+prob.x <- a$count.x/unos.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+## qqplot
+# qqplot(prob.x, prob.y)
+# abline(0,1, col="red", lty=3)
+
+
+## MALE
+a <- merge(unosopt.b3[unosopt.b3$Sex=="Male",], immport.b3[immport.b3$Sex=="Male",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] <- 0
+
+## chi sq test, expected = unos
+# z <- a[a$count.x>20 & a$count.y>20,]
+# prob.y <- z$count.y/sum(z$count.y)
+# chisq.test(z$count.x, prob.y) ## x can be count data, but y needs to be proportion NOT counts
+
+## KS test
+## test for heterogeneity - so it doesnt test for similarity 
+prob.x <- a$count.x/unos.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+## qqplot
+# qqplot(prob.x, prob.y)
+# abline(0,1, col="red", lty=3)
+
+
+#######
+## fishers between male and female
+# a <- merge(immport.b3[immport.b3$Sex=="Male",], immport.b3[immport.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- a[,c("Donation_Age","count.x","count.y")]
+# names(a) = c("Donation_Age","male.immport","female.immport")
+# a <- merge(a, unosopt.b3[unosopt.b3$Sex=="Male",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- merge(a, unosopt.b3[unosopt.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- a[,c("Donation_Age","male.immport","female.immport","count.x","count.y")]
+# names(a) = c("Donation_Age","male.immport","female.immport","male.unos","female.unos")
+# a[is.na(a)] <- 0
+# 
+# fish <- function(x) {
+#   aa=
+#   bb=cbind(aa$p.value,aa$estimate)
+#   return(bb)
+# }
+# 
+# ft.r.p <- as.data.frame(apply(a,1,function(x) fisher.test(matrix(x[2:5],2,2), alternative="two.sided")$p.value))
+# ft.r.e <- as.data.frame(apply(a,1,function(x) fisher.test(matrix(x[2:5],2,2), alternative="two.sided")$estimate))
+# ft.r <- cbind(a$Donation_Age,ft.r.p,ft.r.e); names(ft.r) <- c("Donation_Age","fish.p","fish.OR_est")
+# ft.r$fish.p.bon <- as.data.frame(apply(as.matrix(ft.r$fish.p),1,function(x) min(x*nrow(ft.r),1)) )
+```
+
+#### merge emr and immport
+```{r}
+## FEMALE
+a <- merge(ucsfemr.b3[ucsfemr.b3$Sex=="Female",], immport.b3[immport.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] <- 0
+
+## chi sq test, expected = unos
+# z <- a
+# prob.y <- z$count.y/sum(z$count.y)
+# chisq.test(z$count.x, prob.y) ## x can be count data, but y needs to be proportion NOT counts
+
+## KS test
+prob.x <- a$count.x/emr.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+## qqplot
+# qqplot(prob.x, prob.y)
+# abline(0,1, col="red", lty=3)
+
+#
+## MALE
+a <- merge(ucsfemr.b3[ucsfemr.b3$Sex=="Male",], immport.b3[immport.b3$Sex=="Male",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+## chi sq test, expected = unos
+# z <- a[a$count.x>20 & a$count.y>20,]
+# z <- a
+# prob.y <- z$count.y/sum(z$count.y)
+# chisq.test(z$count.x, prob.y) ## x can be count data, but y needs to be proportion NOT counts
+
+## KS test
+prob.x <- a$count.x/emr.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+## qqplot
+# qqplot(prob.x, prob.y)
+# abline(0,1, col="red", lty=3)
+
+#
+
+
+#
+## fishers between male and female
+# a <- merge(ucsfemr.b3[ucsfemr.b3$Sex=="Male",], immport.b3[immport.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- a[,c("Donation_Age","count.x","count.y")]
+# names(a) = c("Donation_Age","male.immport","female.immport")
+# a <- merge(a, ucsfemr.b3[ucsfemr.b3$Sex=="Male",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- merge(a, ucsfemr.b3[ucsfemr.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- a[,c("Donation_Age","male.immport","female.immport","count.x","count.y")]
+# names(a) <- c("Donation_Age","male.immport","female.immport","male.emr","female.emr")
+# a[is.na(a)] = 0
+# 
+# fish <- function(x) {
+#   aa=
+#     bb <- cbind(aa$p.value,aa$estimate)
+#   return(bb)
+# }
+# 
+# ft.r.p <- as.data.frame(apply(a,1,function(x) fisher.test(matrix(x[2:5],2,2), alternative="two.sided")$p.value))
+# ft.r.e <- as.data.frame(apply(a,1,function(x) fisher.test(matrix(x[2:5],2,2), alternative="two.sided")$estimate))
+# ft.r <- cbind(a$Donation_Age,ft.r.p,ft.r.e); names(ft.r) <- c("Donation_Age","fish.p","fish.OR_est")
+# ft.r$fish.p.bon = as.data.frame(apply(as.matrix(ft.r$fish.p),1,function(x) min(x*nrow(ft.r),1)) )
+```
+
+#### merge emr and unos
+```{r}
+############################
+## #### 
+#
+## FEMALE
+a <- merge(ucsfemr.b3[ucsfemr.b3$Sex=="Female",], unosopt.b3[unosopt.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] <- 0
+
+## chi sq test, expected = unos
+# z <- a
+# prob.y <- z$count.y/sum(z$count.y)
+# chisq.test(z$count.x, prob.y) ## x can be count data, but y needs to be proportion NOT counts
+
+## KS test
+prob.x <- a$count.x/emr.t
+prob.y <- a$count.y/unos.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+## qqplot
+# qqplot(prob.x, prob.y)
+# abline(0,1, col="red", lty=3)
+
+
+## MALE
+a <- merge(ucsfemr.b3[ucsfemr.b3$Sex=="Male",], unosopt.b3[unosopt.b3$Sex=="Male",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] <- 0
+
+## chi sq test, expected = unos
+# z <- a[a$count.x>20 & a$count.y>20,]
+# z <- a
+# prob.y <- z$count.y/sum(z$count.y)
+# chisq.test(z$count.x, prob.y) ## x can be count data, but y needs to be proportion NOT counts
+
+## KS test
+prob.x <- a$count.x/emr.t
+prob.y <- a$count.y/unos.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+## qqplot
+# qqplot(prob.x, prob.y)
+# abline(0,1, col="red", lty=3)
+
+
+
+#
+## fishers between male and female
+# a <- merge(ucsfemr.b3[ucsfemr.b3$Sex=="Male",], ucsfemr.b3[ucsfemr.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- a[,c("Donation_Age","count.x","count.y")]
+# names(a) = c("Donation_Age","male.emr","female.emr")
+# a <- merge(a, unosopt.b3[unosopt.b3$Sex=="Male",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- merge(a, unosopt.b3[unosopt.b3$Sex=="Female",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+# a <- a[,c("Donation_Age","male.emr","female.emr","count.x","count.y")]
+# names(a) <- c("Donation_Age","male.emr","female.emr","male.unos","female.unos")
+# a[is.na(a)] <- 0
+# 
+# fish <- function(x) {
+#   aa=
+#     bb=cbind(aa$p.value,aa$estimate)
+#   return(bb)
+# }
+# 
+# ft.r.p <- as.data.frame(apply(a,1,function(x) fisher.test(matrix(x[2:5],2,2), alternative="two.sided")$p.value))
+# ft.r.e <- as.data.frame(apply(a,1,function(x) fisher.test(matrix(x[2:5],2,2), alternative="two.sided")$estimate))
+# ft.r <- cbind(a$Donation_Age,ft.r.p,ft.r.e); names(ft.r) = c("Donation_Age","fish.p","fish.OR_est")
+# ft.r$fish.p.bon <- as.data.frame(apply(as.matrix(ft.r$fish.p),1,function(x) min(x*nrow(ft.r),1)) )
+```
+
+## race/ethnicity
+### input
+```{r}
+## remove missing Race
+## remove hispanics because UNOS has hispanic/latinos as a "race" category, which is inconsistent with the ImmPort clinical trial data
+## remove hispanics from b3.dd first so that the denominator (total) for proportion is calculated correctly
+a.r <- idata %>% filter(!is.na(Donation_Age)) %>%
+                 filter(!is.na(Race))
+                 # filter(Race != "Hispanic/Latino")
+b4.rr <- ddply(.data=a.r, .variables="Data_Source", .fun=transform, sum.n = length(Data_Source))
+
+## calculate proportion
+b4.r1 <- ddply(.data = b4.rr, .variables = c("Donation_Age","Race","Data_Source"), .fun=summarise, count = length(Donation_Age), proportion = count/sum.n[1])
+
+b4.r2 <- ddply(.data = b4.rr, .variables = c("Donation_Age","Sex","Race","Data_Source"), .fun=summarise, count = length(Donation_Age), proportion = count/sum.n[1])
+
+```
+
+## PLOT split by dataset; plot by ETHNICITY using ggplot2; bars
+```{r}
+## get colors
+getPalette <- brewer.pal(9, "Set1")
+
+## plot
+b4.r1 %>% 
+  ggplot(aes(x=Donation_Age, y=proportion, fill=Race)) +
+  geom_bar(stat = "identity", position = position_stack(reverse = TRUE)) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") +
+  scale_x_continuous(breaks=seq(0,80,by=5))
+# ggsave("barplots-gender-aggregate-immport_emr_unos.pdf", device = "pdf")
+
+## stacked bar split by gender and stacked by ethnicity
+b4.r2 %>%
+  ggplot(aes(Sex, proportion, fill = Race)) +
+  geom_bar(stat = "identity", position = position_stack(reverse = TRUE)) +
+  facet_grid(Data_Source ~., scale = "fixed") + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) + 
+  scale_fill_brewer(palette = "Set1")
+```
+
+## stat test for similarity; KS test
+```{r}
+immport.b4 <- b4.r1[b4.r1$Data_Source == "ImmPort_DR19",]
+imm.t <- sum(immport.b4$count)
+unosopt.b4 <- b4.r1[b4.r1$Data_Source == "UNOS_OPTN",]
+unos.t <- sum(unosopt.b4$count)
+ucsfemr.b4 <- b4.r1[b4.r1$Data_Source == "UCSF_EMR",]
+emr.t <- sum(ucsfemr.b4$count)
+```
+
+### within immport
+```{r}
+imm.c <- immport.b4[immport.b4$Race=="White_or_Caucasian",]
+imm.nc <- immport.b4[immport.b4$Race!="White_or_Caucasian",]
+
+a <- merge(imm.c, imm.nc, by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+prob.x <- a$count.x/imm.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+```
+
+#### merge immport and unos
+```{r}
+#### CAUCASIAN ####
+a <- merge(unosopt.b4[unosopt.b4$Race=="White_or_Caucasian",], immport.b4[immport.b4$Race=="White_or_Caucasian",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+## KS test
+prob.x <- a$count.x/unos.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+#### NON-CAUCASIAN ####
+a <- merge(unosopt.b4[unosopt.b4$Race!="White_or_Caucasian",], immport.b4[immport.b4$Race!="White_or_Caucasian",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+## KS test
+prob.x <- a$count.x/unos.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x, prob.y, exact=TRUE, alternative="two.sided")
+
+```
+
+
+------ LOOKING ONLY AT IMMPORT RELATIONSHIP------
+# input
+```{r}
+dm <- read.delim("/Users/jiemingchen/Documents/transplantation/a_donor/immport/finals.iTx/final.iTx.DM.v15.txt", header = T, sep = "\t") %>% 
+          select(Sub_Org_Accession, AGE_TRANSPLANT, PHI_GENDER, DEMO_RACE_MERGED)
+rp <- read.delim("/Users/jiemingchen/Documents/transplantation/a_donor/immport/finals.iTx/final.iTx.recipient.v15.txt", header = T, sep = "\t")
+idata <- merge(dm, rp, by = "Sub_Org_Accession")
+idata <- idata %>% 
+            mutate(AGE_TRANSPLANT = round(AGE_TRANSPLANT)) %>%
+            mutate(DEMO_DNR_RELATE_COMB = 
+  ifelse(DEMO_DNR_RELATE == "Child", "Biological,_Child", 
+  ifelse(DEMO_DNR_RELATE == "Biological,_Half_Sibling" | DEMO_DNR_RELATE == "Sister_(full_or_half)" | DEMO_DNR_RELATE == "Brother_(full_or_half)" | DEMO_DNR_RELATE == "Identical_Twin", "Biological,_Full_Sibling",
+  ifelse(DEMO_DNR_RELATE == "Nephew" | DEMO_DNR_RELATE == "Niece" | DEMO_DNR_RELATE == "Aunt" | DEMO_DNR_RELATE == "Uncle" | DEMO_DNR_RELATE == "Grandfather" | DEMO_DNR_RELATE == "Grandmother" | DEMO_DNR_RELATE == "Cousin", "Biological,_Other_Relative_(Specify)",
+  ifelse(DEMO_DNR_RELATE == "Father" | DEMO_DNR_RELATE == "Mother", "Biological,_Parent", 
+  ifelse(DEMO_DNR_RELATE == "Unknown", NA, 
+  ifelse(DEMO_DNR_RELATE == "Non-Biological,_Unrelated,_Directed_Dona" | DEMO_DNR_RELATE == "Non-Biological,_Unrelated,_Non-Directed" | DEMO_DNR_RELATE == "Non-Biological,_Unrelated_Paired_Exchang" | DEMO_DNR_RELATE == "Non-Biological,_Other_Unrelated_Directed", "Non-Biological,_Unrelated", as.character(DEMO_DNR_RELATE)))))))) %>%
+  filter(DEMO_DNR_RELATE != "Living_Related" & DEMO_DNR_RELATE != "Living_related" & DEMO_DNR_RELATE != "Living_unrelated" & DEMO_DNR_RELATE != "Living_Unrelated")
+
+## split at age 25
+idata.lt25 <- idata[idata$AGE_TRANSPLANT <= 25,]
+idata.mt25 <- idata[idata$AGE_TRANSPLANT > 25,]
+```
+
+# all subjects
+```{r}
+age.rship <- ddply(.data = idata, .variables = c("AGE_TRANSPLANT", "DEMO_DNR_RELATE_COMB"), .fun=summarise,
+                   count = length(AGE_TRANSPLANT)) 
+colnames(age.rship) <- c("AGE_TRANSPLANT", "DEMO_DNR_RELATE_COMB", "count")
+age.rship <- age.rship %>% filter(!is.na(DEMO_DNR_RELATE_COMB))
+```
+## bar plot
+```{r}
+##-----------------------------------------------------------
+## relationships
+## BAR PLOT
+pmain <- ggplot(age.rship, aes(AGE_TRANSPLANT, count, fill = DEMO_DNR_RELATE_COMB), xlim = c(0,80))
+phisto <- geom_bar(stat = "identity")
+plabels <- labs(x="Age",y="Count")
+pticks <- scale_x_continuous(breaks=seq(min(age.rship$AGE_TRANSPLANT),max(age.rship$AGE_TRANSPLANT),by=1))
+paxes <-  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+ptitle <- theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+plegend <- theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+pline <- geom_vline(xintercept=25, color="red")
+## set1 usually has only 8 colors
+getPalette <- colorRampPalette(brewer.pal(9, "Set1"))
+## how many colors do we need
+colorCount <- length(unique(age.rship$DEMO_DNR_RELATE_COMB))
+## "manually" add colors instead of scale_fill_brewer fixed brwer colors
+# newcolors <- c("#E41A1C","#66628D","#66628D","#419486","#5A9D5A","#66628D","#999999","#999999","black","#999999","#999999","#999999")
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = getPalette(colorCount)) + pline
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = newcolors) + pline
+# ggsave("age_reciprship_bar_newcolors.pdf", device = "pdf")
+```
+
+## line plot
+```{r}
+#
+# LINE
+pmain <- ggplot(age.rship, aes(AGE_TRANSPLANT, count, color = DEMO_DNR_RELATE_COMB), xlim = c(0,80))
+phisto <- geom_line(size=1.5)
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = newcolors) + pline
+# ggsave("age_reciprship_line_newcolors.pdf", device = "pdf")
+
+
+
+```
+
+## split relationships by gender using line plots
+```{r}
+age.rship.gender <- ddply(.data = idata, .variables = c("AGE_TRANSPLANT", "PHI_GENDER", "DEMO_DNR_RELATE_COMB"), .fun=summarise, count = length(AGE_TRANSPLANT))
+age.rship.gender$label <- paste(age.rship.gender$PHI_GENDER,age.rship.gender$DEMO_DNR_RELATE_COMB,sep="-")
+total.rship.gender <- ddply(.data = idata, .variables = c("PHI_GENDER", "DEMO_DNR_RELATE_COMB"), .fun=summarise, count = length(AGE_TRANSPLANT)) %>% filter(!is.na(DEMO_DNR_RELATE_COMB))
+total.rship.gender$label <- paste(total.rship.gender$PHI_GENDER,total.rship.gender$DEMO_DNR_RELATE_COMB,sep="-")
+age.rship.gender <- merge(age.rship.gender, total.rship.gender, by="label")
+age.rship.gender <- age.rship.gender %>% filter(!is.na(DEMO_DNR_RELATE_COMB.x)) %>% mutate(proportion = count.x/count.y)
+
+## LINE
+pmain <- ggplot(age.rship.gender, aes(AGE_TRANSPLANT, count.x, color = DEMO_DNR_RELATE_COMB.x), xlim = c(0,80), ylim = c(0,70))
+phisto <- geom_line(size=1.5)
+pfacet <- facet_grid(PHI_GENDER.x ~., scale = "free_y")
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline + pfacet
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = newcolors) + pline + pfacet
+# ggsave("age_gender_split_reciprship_line_newcolors.pdf", device = "pdf")
+
+pmain <- ggplot(age.rship.gender, aes(AGE_TRANSPLANT, proportion, color = DEMO_DNR_RELATE_COMB.x), xlim = c(0,80), ylim = c(0,70))
+phisto <- geom_line(size=1.5)
+pfacet <- facet_grid(~ PHI_GENDER.x, scale = "free_y")
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend +
+  scale_color_manual(values = getPalette(colorCount)) + pline + pfacet
+# #
+# ## BAR
+# 
+# pmain <- ggplot(age.rship.gender, aes(AGE_TRANSPLANT, count, fill = DEMO_DNR_RELATE_COMB))
+# phisto <- geom_bar(stat = "identity")
+# pfacet <- facet_grid(PHI_GENDER ~., scale = "free_y")
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + pline + pfacet 
+# # pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_fill_manual(values = newcolors) + pline + pfacet
+# # ggsave("age_gender_split_reciprship_bar.pdf", device = "pdf")
+
+```
+
+## split relationship by ethnicity
+```{r}
+age.rship.eth <- ddply(.data = idata, .variables = c("AGE_TRANSPLANT", "DEMO_RACE_MERGED", "DEMO_DNR_RELATE_COMB"), .fun=summarise, count = length(AGE_TRANSPLANT), proportion = length(AGE_TRANSPLANT)/nrow(idata))
+colnames(age.rship.eth) <- c("AGE_TRANSPLANT", "DEMO_RACE_MERGED", "DEMO_DNR_RELATE_COMB", "count", "proportion")
+age.rship.eth <- age.rship.eth %>% filter(!is.na(DEMO_DNR_RELATE_COMB))
+
+## LINE
+pmain <- ggplot(age.rship.eth, aes(AGE_TRANSPLANT, proportion, color = DEMO_DNR_RELATE_COMB), xlim = c(0,80), ylim = c(0,70))
+phisto <- geom_line(size=1.5)
+pfacet <- facet_grid(~ DEMO_RACE_MERGED, scale = "free_y")
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline + pfacet
+# pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = newcolors) + pline + pfacet
+# ggsave("age_gender_split_reciprship_line_newcolors.pdf", device = "pdf")
+
+```
+
+# relationship Trends in UNOS
+```{r}
+idata.unos <- 
+  read.table("/Users/jiemingchen/Documents/transplantation/a_donor/unos/unos-LIVING_DONOR_DATA_DM_race_organ_relation-kidney-us-128407.rshipmod.txt", header = T, stringsAsFactors = F) 
+age.rship.gender.unos <- ddply(.data = idata.unos, .variables = c("AGE_DON", "GENDER", "LIV_DON_TY_MERGED"), .fun=summarise, count = length(AGE_DON))
+age.rship.gender.unos$label <- paste(age.rship.gender.unos$GENDER,age.rship.gender.unos$LIV_DON_TY_MERGED,sep="-")
+total.rship.gender.unos <- ddply(.data = idata.unos, .variables = c("GENDER", "LIV_DON_TY_MERGED"), .fun=summarise, count = length(AGE_DON)) %>% filter(!is.na(LIV_DON_TY_MERGED))
+total.rship.gender.unos$label <- paste(total.rship.gender.unos$GENDER,total.rship.gender.unos$LIV_DON_TY_MERGED,sep="-")
+age.rship.gender.unos <- merge(age.rship.gender.unos, total.rship.gender.unos, by="label")
+age.rship.gender.unos <- age.rship.gender.unos %>% filter(!is.na(LIV_DON_TY_MERGED.x)) %>% mutate(proportion = count.x/count.y)
+
+## LINE
+pmain <- ggplot(age.rship.gender.unos, aes(AGE_DON, count.x, color = LIV_DON_TY_MERGED.x), xlim = c(15,77), ylim = c(0,70))
+phisto <- geom_line(size=1.5)
+pfacet <- facet_grid(GENDER.x ~., scale = "free_y")
+pmain + phisto + plabels + pticks + paxes + ptitle + plegend + scale_color_manual(values = getPalette(colorCount)) + pline + pfacet
+```

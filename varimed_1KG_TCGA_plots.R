@@ -304,7 +304,7 @@ write.table(cc.eur, "cc.eur.txt", sep="\t", quote=F)
     
   }
 
-  ## manual
+  ## manual ## note that the prostate-prostate here contains females + males in 1KGP3
 cc.eur.bp = c("Hair_color", "Melanoma", "Hair_color", "Prostate_cancer", "Melanoma", "Behcet's_disease")
 cc.eur.ha = c("Eso-AdenoCA", "Eso-AdenoCA", "Lymph-CLL", "Prost-AdenoCA", "Skin-Melanoma", "Stomach-AdenoCA")
 mwpp.eur = as.data.frame(t(mapply(function(x,y) mwp(LR.cancer.final, LR.1kg.final, "population==\"EUR\"", "LLR", x,y), cc.eur.ha, cc.eur.bp)))
@@ -507,12 +507,20 @@ p.prostate.prostate = as.data.frame(plotviolin(LR.cancer.final, LR.1kg.final,
                                               dz = "Prostate_cancer"))
 # ggsave("violin-prostate-prostate_zm.pdf", device = "pdf", useDingbats=FALSE)
 x11(type="cairo")
+## male only
 p.prostate.prostate.m = as.data.frame(plotviolin(LR.cancer.final, LR.1kg.final.male, 
                                                "population==\"EUR\"", 
                                                "histology_abbreviation==\"Prost-AdenoCA\"",
                                                dz = "Prostate_cancer"))
 names(p.prostate.prostate.m) = c("twosided","onesided_less","onesided_greater")
 p.prostate.prostate.m$twosided.adj = p.prostate.prostate.m$twosided * 
+  (cc.eur[cc.eur$broad_phenotype == "Prostate_cancer" & cc.eur$histology_abbreviation == "Prost-AdenoCA","LLR.p.adj"] / 
+     cc.eur[cc.eur$broad_phenotype == "Prostate_cancer" & cc.eur$histology_abbreviation == "Prost-AdenoCA","LLR.p"] * 
+     cc.eur[cc.eur$broad_phenotype == "Prostate_cancer" & cc.eur$histology_abbreviation == "Prost-AdenoCA","rank"])
+
+## male + female
+names(p.prostate.prostate) = c("twosided","onesided_less","onesided_greater")
+p.prostate.prostate$twosided.adj = p.prostate.prostate$twosided * 
   (cc.eur[cc.eur$broad_phenotype == "Prostate_cancer" & cc.eur$histology_abbreviation == "Prost-AdenoCA","LLR.p.adj"] / 
      cc.eur[cc.eur$broad_phenotype == "Prostate_cancer" & cc.eur$histology_abbreviation == "Prost-AdenoCA","LLR.p"] * 
      cc.eur[cc.eur$broad_phenotype == "Prostate_cancer" & cc.eur$histology_abbreviation == "Prost-AdenoCA","rank"])

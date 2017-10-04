@@ -447,4 +447,56 @@ pmain2 + phisto2 + phisto3 + phisto4 +
 
 
 ```
+# Cohen's d for effect sizes of distributions in Mann-whitney tests
+```{r}
 
+##### melanoma-melanoma #####
+vg1 = wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR)
+# str(wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR))
+n = length(mm.1kgp3$LLR) + length(mm.tcga$LLR)
+
+## calcu effect size
+W = as.data.frame(vg1$statistic)[1,1]
+var_W = sqrt( (n*(n+1)*(2*n + 1)) / 6 )
+Z1 = W / var_W
+eff_size1 = Z1 / sqrt(n) ## 0.08855044 very small effect size
+total_rank_sum = sum(seq(1,n))
+eff_size1b = W / total_rank_sum ## 0.1022073
+
+## calcul effect size using coin library
+library(coin)
+g = factor(c(rep("1KGP3", length(mm.1kgp3$LLR)), rep("TCGA", length(mm.tcga$LLR))))
+v = c(mm.1kgp3$LLR, mm.tcga$LLR)
+vg2 = wilcox_test(v ~ g, distribution="exact")
+
+Z2 = abs(as.data.frame(statistic(vg2))[1,1])
+eff_size2 = Z2 / sqrt(n) ## 0.1888995 very small effect size
+
+
+######
+#### prostate-prostate
+pp.1kgp3 = LR.1kg.final.male[LR.1kg.final.male$broad_phenotype=="Prostate_cancer" & LR.1kg.final.male$population=='EUR',]
+pp.tcga = LR.cancer.final[LR.cancer.final$broad_phenotype=="Prostate_cancer" & LR.cancer.final$population=='EUR' & LR.cancer.final$histology_abbreviation_m=='Prost-AdenoCA',]
+
+vg1.pp = wilcox.test(pp.1kgp3$LLR, pp.tcga$LLR)
+# str(wilcox.test(mm.1kgp3$LLR, mm.tcga$LLR))
+n.pp = length(pp.1kgp3$LLR) + length(pp.tcga$LLR)
+
+## calcu effect size
+W.pp = as.data.frame(vg1.pp$statistic)[1,1]
+var_W.pp = sqrt( (n.pp*(n.pp+1)*(2*n.pp + 1)) / 6 )
+Z1.pp = W.pp / var_W.pp
+eff_size1.pp = Z1.pp / sqrt(n.pp) ## 0.1431631 very small effect size
+total_rank_sum.pp = sum(seq(1,n.pp))
+eff_size1b.pp = W.pp / total_rank_sum.pp ## 0.1652126
+
+## calcul effect size using coin library
+library(coin)
+g.pp = factor(c(rep("1KGP3", length(pp.1kgp3$LLR)), rep("TCGA", length(pp.tcga$LLR))))
+v.pp = c(pp.1kgp3$LLR, pp.tcga$LLR)
+vg2.pp = wilcox_test(v.pp ~ g.pp, distribution="exact")
+
+Z2.pp = abs(as.data.frame(statistic(vg2.pp))[1,1])
+eff_size2.pp = Z2.pp / sqrt(n.pp) ## 0.2777588 very small effect size
+
+```

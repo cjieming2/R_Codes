@@ -318,6 +318,7 @@ mwp <- function(cancerdata, ref1kgdata, pop, LLRcol, cancertype, dz)
 }
 
 ## n = 2872 for multiple testing
+## male + female for prostate-prostate and breast-breast
 cc.eur.bp = c("Prostate_cancer","Melanoma","Glioma","Biliary_liver_cirrhosis","Narcolepsy","Wilms'_tumor","Hair_color","Melanoma","Behcet's_disease","Hair_color","Prostate_cancer")
 cc.eur.ha = c("Prost-AdenoCA","Skin-Melanoma","CNS_cancer","CNS_cancer","Panc_cancer","Panc_cancer","Eso-AdenoCA","Eso-AdenoCA","Stomach-AdenoCA","ColoRect-AdenoCA","CNS_cancer")
 mwpp.eur = as.data.frame(t(mapply(function(x,y) mwp(LR.cancer.final, LR.1kg.final, "population==\"EUR\"", "LLR", x,y), cc.eur.ha, cc.eur.bp)))
@@ -356,6 +357,7 @@ p.prostate.prostate = as.data.frame(plotviolin(LR.cancer.final, LR.1kg.final,
                                                dz = "Prostate_cancer"))
 # ggsave("violin-prostate-prostate_zm.pdf", device = "pdf", useDingbats=FALSE)
 x11(type="cairo")
+## male only
 p.prostate.prostate.m = as.data.frame(plotviolin(LR.cancer.final, LR.1kg.final.male, 
                                                  "population==\"EUR\"", 
                                                  "histology_abbreviation==\"Prost-AdenoCA\"",
@@ -467,9 +469,9 @@ plotmatrix(AFR.mat.pval.m.new[complete.cases(AFR.mat.pval.m.new),], colp="LLR.p.
 
 plotviolin <- function(cancerdata, refdata, popparse, cancertypeparse, dz)
 {
-  tcga = subset(LR.cancer.final, eval(parse(text=popparse)) & eval(parse(text=cancertypeparse)), 
+  tcga = subset(cancerdata, eval(parse(text=popparse)) & eval(parse(text=cancertypeparse)), 
                 select=c(sample.id, population, broad_phenotype, LLR, LLR_max, dataset))
-  kgp3 = subset(LR.1kg.final, eval(parse(text=popparse)), 
+  kgp3 = subset(refdata, eval(parse(text=popparse)), 
                 select=c(sample.id, population, broad_phenotype, LLR, LLR_max, dataset))
   
   merged = rbind(tcga, kgp3)
