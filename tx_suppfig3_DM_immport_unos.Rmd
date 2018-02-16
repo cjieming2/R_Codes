@@ -1,0 +1,395 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# library and function
+```{r include=FALSE}
+## my own library
+source("/Users/chenj220/R_codes/jmRlib.R")
+
+library(RImmPort)
+library(DBI)
+library(sqldf)
+library(dplyr)
+library(RMySQL)
+library(ggplot2)
+library(gridExtra)
+library(gapminder)
+library(plyr)
+library(RColorBrewer)
+library(scales)
+
+## plot and save function
+plot_age_sex <- function(data,flag,range) {
+  names(data)[names(data)=="Patient_Sex"]  <- "Sex"
+  names(data)[names(data)=="Donation_Age"]  <- "AGE"
+  names(data)[names(data)=="Patient_Race2"]  <- "RACE"
+  
+  ## this is a histogram, age 40 is considered at bin 39; uses un-ddply a - nope
+  # pmain = ggplot(data=data, aes(x=round(data$AGE), fill=Sex))
+  # phisto = geom_histogram(breaks=seq(min(round(data$AGE)),round(max(data$AGE)),by=1), position = "dodge")
+  
+  ## this groups each age group as a category and then takes 15 min to plot!! uses ddply b -- nope
+  # pmain = ggplot(b,aes(x=SEX,y=count,fill=Organ))
+  # phisto = geom_bar(stat = "identity",color="white") + facet_wrap(~AGE,nrow=1)
+  
+  if(flag == 1)
+  {
+    ############
+    # this one b1 
+    pmain = ggplot(data=data, aes(x=AGE, y=count, fill=Sex))
+    phisto = geom_bar(stat="identity", position = position_dodge())
+    plabels = labs(x="Age",y="Count")
+    pticks = scale_x_continuous(breaks=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                  axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                  axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+    ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+    plegend = theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+    
+    myplot = pmain + phisto + plabels + pticks + paxes + ptitle + plegend
+    return(myplot)
+  } else if(flag == 2)
+  {
+    ########
+    ## this plots each x axis as an interaction of age and sex and then adjust label for age
+    ## order of Sex and AGE matter - uses b
+    ## plots organ with this data
+    pmain = ggplot(data, aes(x = as.numeric(interaction(Sex,AGE)), y=count, fill=ORGAN))
+    phisto = geom_bar(stat = "identity") 
+    plabels = labs(x="Age",y="Count")
+    # pticks = scale_x_continuous(breaks=range, labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    #pticks = scale_x_continuous(breaks=range,labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    # pticks = scale_x_continuous() ##debug
+    paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                  axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                  axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+    ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+    plegend = theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+    
+    pcolor = scale_fill_manual(values=c("#00BA38","#F8766D","#619CFF")) ## only for donors
+    myplot = pmain + phisto + plabels + paxes + ptitle + plegend + pcolor
+    return(myplot)
+  } else
+  {
+    ########
+    ## this plots each x axis as an interaction of age and sex and then adjust label for age
+    ## order of Sex and AGE matter - uses b
+    ## plots study with this data
+    pmain = ggplot(data, aes(x = as.numeric(interaction(Sex,AGE)), y=count, fill=RACE))
+    phisto = geom_bar(stat = "identity") 
+    plabels = labs(x="Age",y="Count")
+    # pticks = scale_x_continuous(breaks=range, labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    #pticks = scale_x_continuous(breaks=range,labels=seq(min(round(data$AGE)),round(max(data$AGE)),by=1))
+    # pticks = scale_x_continuous() ##debug
+    paxes = theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+                  axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+                  axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15))
+    ptitle = theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30))
+    plegend = theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14))
+    
+    # pcolor = scale_fill_manual(values=c("#00BA38","#F8766D","#619CFF")) ## only for donors
+    myplot = pmain + phisto + plabels + paxes + ptitle + plegend
+    return(myplot)
+  }
+}
+```
+
+
+#------ COMPARING IMMPORT, EHR and UNOS/OPTN ------ 
+## input data
+```{r}
+##-----------------------------------------------------------
+## input data
+# extract only kidney
+# fsieve -s /Users/jiemingchen/Documents/transplantation/a_donor/immport/finals.iTx/final.iTx.DM.v15.nonkidneyLDs.txt combined_emr_immport_unos-all-updated-stand.txt -m 
+idata <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/combined/sieved-combined_emr_immport_unos-all-updated-stand.txt", header = T, sep = "\t")
+a.d <- idata[!is.na(idata$Donation_Age) & !is.na(idata$Sex),]
+
+
+```
+
+## race/ethnicity
+### input
+```{r}
+## remove missing Race
+## remove hispanics because UNOS has hispanic/latinos as a "race" category, which is inconsistent with the ImmPort clinical trial data
+## remove hispanics from b3.dd first so that the denominator (total) for proportion is calculated correctly
+a.r <- idata %>% filter(!is.na(Donation_Age)) %>%
+                 filter(!is.na(Race))
+                 # filter(Race != "Hispanic/Latino")
+b4.rr <- ddply(.data=a.r, .variables="Data_Source", .fun=transform, sum.n = length(Data_Source)) %>% 
+  mutate(Donation_Age_Group = 
+           ifelse(Donation_Age<=15, "le15", 
+                  ifelse(Donation_Age>15 & Donation_Age<=25, "le25",
+                         ifelse(Donation_Age>25 & Donation_Age<=35, "le35",
+                                ifelse(Donation_Age>35 & Donation_Age<=45, "le45",
+                                       ifelse(Donation_Age>45 & Donation_Age<=55, "le55",
+                                              ifelse(Donation_Age>55 & Donation_Age<=65, "le65","ge65")))))))
+
+## calculate proportion
+b4.r1 <- ddply(.data = b4.rr, .variables = c("Donation_Age","Race","Data_Source"), .fun=summarise, count = length(Donation_Age_Group), proportion = count/sum.n[1])
+
+b4.r2 <- ddply(.data = b4.rr, .variables = c("Donation_Age","Sex","Race","Data_Source"), .fun=summarise, count = length(Donation_Age), proportion = count/sum.n[1])
+
+b4.r3 <- ddply(.data = b4.rr, .variables = c("Race","Sex","Data_Source"), .fun=summarise, count = length(Donation_Age))
+
+b4.r4.1 <- ddply(.data = b4.rr, .variables = c("Sex","Race","Data_Source"), .fun=summarise, gender_count = length(Data_Source))
+b4.r4.2 <- ddply(.data = b4.rr, .variables = c("Race","Data_Source"), .fun=summarise, total = length(Data_Source))
+b4.r4 <- merge(b4.r4.1, b4.r4.2, by = c("Race", "Data_Source")) %>% mutate(proportion = gender_count/total)
+
+b4.r5.1 <- ddply(.data = b4.rr, .variables = c("Donation_Age_Group","Race","Data_Source"), .fun=summarise, age_count = length(Data_Source))
+b4.r5 <- merge(b4.r5.1, b4.r4.2, by = c("Race", "Data_Source")) %>% mutate(proportion = age_count/total)
+
+b4.r6 <- ddply(.data = b4.rr, .variables = c("Donation_Age_Group","Race","Data_Source"), .fun=summarise, count = length(Donation_Age_Group), proportion = count/sum.n[1])
+```
+
+## PLOT split by dataset; plot by ETHNICITY using ggplot2; bars
+```{r}
+## get colors
+getPalette <- brewer.pal(9, "Set1")
+
+## plot: age vs race
+b4.r1 %>% 
+  ggplot(aes(x=Donation_Age, y=proportion, fill=Race)) +
+  geom_bar(stat = "identity", position = position_stack(reverse = TRUE)) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") +
+  scale_x_continuous(breaks=seq(0,80,by=5))
+# ggsave("barplots-gender-aggregate-immport_emr_unos.pdf", device = "pdf")
+
+# including caucasian
+b4.r6 %>%
+  ggplot(aes(x=Race, y=proportion, fill=Donation_Age_Group)) +
+  geom_bar(stat = "identity", position = position_stack(reverse = TRUE)) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), 
+              axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") 
+# ggsave("barplots-gender-aggregate-immport_emr_unos.pdf", device = "pdf")
+
+# non-caucasian
+b4.r6 %>%
+  filter(!(Race == "White_or_Caucasian")) %>%
+  ggplot(aes(x=Race, y=proportion, fill=Donation_Age_Group)) +
+  geom_bar(stat = "identity", position = position_stack(reverse = TRUE)) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), 
+              axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") 
+
+
+# including caucasian; dodged bar plots
+b4.r6 %>%
+  ggplot(aes(x=Race, y=proportion, fill=Donation_Age_Group)) +
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), 
+              axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") 
+# ggsave("barplots-gender-aggregate-immport_emr_unos.pdf", device = "pdf")
+
+# non-caucasian; dodged bar plots
+b4.r6 %>%
+  filter(!(Race == "White_or_Caucasian")) %>%
+  ggplot(aes(x=Race, y=proportion, fill=Donation_Age_Group)) +
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), 
+              axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") 
+
+
+# including caucasian; dodged bar plots; proportion denominator by race+datasource
+b4.r5 %>%
+  ggplot(aes(x=Race, y=proportion, fill=Donation_Age_Group)) +
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), 
+              axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") 
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig3-age_genderbias_in_races/race_agebias_incl_cau.pdf", device = "pdf")
+
+# non-caucasian; dodged bar plots; proportion denominator by race+datasource
+b4.r5 %>%
+  filter(!(Race == "White_or_Caucasian")) %>%
+  ggplot(aes(x=Race, y=proportion, fill=Donation_Age_Group)) +
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  facet_grid(Data_Source ~., scale = "free_y") + 
+  labs(x="Age of Donation",y="Proportion") +
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), 
+              axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) + 
+  scale_fill_brewer(palette = "Set1") 
+```
+
+```{r}
+## plot: sex vs race
+## stacked bar split by gender and stacked by ethnicity
+
+b4.rr %>%
+  dplyr::group_by(Data_Source, Race) %>%
+  dplyr::summarise(n = n())
+
+b4.r2 %>%
+  ggplot(aes(Sex, proportion, fill = Race)) +
+  geom_bar(stat = "identity", position = position_stack(reverse = TRUE)) +
+  facet_grid(Data_Source ~., scale = "fixed") + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) + 
+  scale_fill_brewer(palette = "Set1")
+
+## number of individuals stratified by race in each dataset
+unique(a.d$Data_Source)
+lapply(unique(a.d$Data_Source), function(x) table((a.d %>% filter(a.d$Data_Source == x))$Race))
+
+## plots
+# based on proportion of genders by dataset only (incl Caucasian)
+b4.r2 %>%
+  ggplot(aes(x=Race, proportion, fill = Sex)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(Data_Source ~., scale = "fixed") + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) + 
+  scale_fill_brewer(palette = "Set1")
+
+# based on proportion of genders by dataset only (Non-Caucasian)
+b4.r2 %>%
+  filter(!(Race == "White_or_Caucasian")) %>%
+  ggplot(aes(x=Race, proportion, fill = Sex)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(Data_Source ~., scale = "fixed") + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) + 
+  scale_fill_brewer(palette = "Set1")
+
+# based on proportion of genders by dataset and race (incl Caucasian)
+b4.r4 %>%
+  ggplot(aes(x=Race, proportion, fill = Sex)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(Data_Source ~., scale = "fixed") + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) + 
+  scale_fill_brewer(palette = "Set1")
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig3-age_genderbias_in_races/race_genderbias_incl_cau.pdf", device = "pdf")
+
+# based on proportion of genders by dataset and race (excl Cau)
+b4.r4 %>%
+  filter(!(Race == "White_or_Caucasian")) %>%
+  ggplot(aes(x=Race, proportion, fill = Sex)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(Data_Source ~., scale = "fixed") + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 20),
+              axis.title.y = element_text(face = "bold",colour = "black", size = 20),
+              axis.text.x = element_text(size = 15, angle = 45), axis.text.y = element_text(size = 15)) +
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 30)) + 
+  scale_fill_brewer(palette = "Set1")
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig3-age_genderbias_in_races/race_genderbias_excl_cau.pdf", device = "pdf")
+```
+
+## stat test for similarity; KS test
+```{r}
+immport.b4 <- b4.r1[b4.r1$Data_Source == "ImmPort_DR19",]
+imm.t <- sum(immport.b4$count)
+unosopt.b4 <- b4.r1[b4.r1$Data_Source == "UNOS_OPTN",]
+unos.t <- sum(unosopt.b4$count)
+ucsfemr.b4 <- b4.r1[b4.r1$Data_Source == "UCSF_EMR",]
+emr.t <- sum(ucsfemr.b4$count)
+```
+
+### within immport
+```{r}
+imm.c <- immport.b4[immport.b4$Race=="White_or_Caucasian",]
+imm.nc <- immport.b4[immport.b4$Race!="White_or_Caucasian",]
+
+a <- merge(imm.c, imm.nc, by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+prob.x <- a$count.x/imm.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+
+```
+
+#### merge immport and unos
+```{r}
+#### CAUCASIAN ####
+a <- merge(unosopt.b4[unosopt.b4$Race=="White_or_Caucasian",], immport.b4[immport.b4$Race=="White_or_Caucasian",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+## KS test
+bon_n <- 2
+prob.x <- a$count.x/unos.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
+paste0("Bonferroni-corrected p=",ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")$p.value * bon_n,
+       " with n=",bon_n)
+
+#### NON-CAUCASIAN ####
+a <- merge(unosopt.b4[unosopt.b4$Race!="White_or_Caucasian",], immport.b4[immport.b4$Race!="White_or_Caucasian",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
+a <- a[,c("Donation_Age","count.x","count.y")]
+a[is.na(a)] = 0
+
+## KS test
+prob.x <- a$count.x/unos.t
+prob.y <- a$count.y/imm.t
+ks.test(prob.x, prob.y, exact=TRUE, alternative="two.sided")
+
+## multinomial chisq test
+library(EMT)
+b4.r6 <- ddply(.data = b4.rr, .variables = c("Donation_Age_Group","Race","Data_Source"), .fun=summarise, count = length(Donation_Age_Group), proportion = count/sum.n[1])
+
+obs_imm <- b4.rr %>% filter(Data_Source == "ImmPort_DR19") %>% group_by(Race) %>% dplyr::summarize(n = n()) %>% filter(!(Race == "Other")) 
+exp_uno <- b4.rr %>% filter(Data_Source == "UNOS_OPTN") %>% group_by(Race) %>% dplyr::summarize(n = n()) %>% mutate(prob = n/sum(n))
+# out <- multinomial.test(obs_imm$n, exp_uno$prob, useChisq = FALSE, MonteCarlo = FALSE, ntrial = 10, atOnce = 1000000) ## either it takes too long or doesnt seem to work 
+
+## pearson's chisq test comparing both
+chisqresults <- chisq.test(obs_imm$n, exp_uno$prob)
+
+
+```
