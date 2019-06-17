@@ -8,11 +8,11 @@ output: html_notebook
 ## my own library
 source("/Users/chenj220/R_codes/jmRlib.R")
 
-library(RImmPort)
+# library(RImmPort)
 library(DBI)
 library(sqldf)
 library(dplyr)
-library(RMySQL)
+# library(RMySQL)
 library(ggplot2)
 library(gridExtra)
 library(gapminder)

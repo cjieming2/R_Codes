@@ -1,0 +1,121 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# input and libraries
+```{r}
+library(survival)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(survminer)
+library(tidyr)
+library(data.table)
+
+## kidney only
+## for some reason read.table didn't work
+# setwd("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/survival")
+# data.outcome <- read.delim("final.iTx.posttx_outcomes.v5.kidney.txt", header = T, sep = "\t", stringsAsFactors = F)
+
+
+## input - relive only
+o.ori <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/immport2cytoscape/txp_immport2outcomes-merged-relive01_02_03_immport2tsv-noControls_posttx_outcomes_kidney.txt", header = T, stringsAsFactors = F)
+
+
+o <- o.ori %>%
+        filter(!is.na(event_min) & !is.na(event_max)) %>%
+        filter(event_min >= 0)
+
+## add the tx node only on non-NA individuals
+tx <- data.frame(subject_ID=unique(o$subject_ID), event="transplant",event_min=0,event_max=0)
+o <- rbind(o, tx)
+
+nodes.labels <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/cytoscape/network_info/tx_LD_outcome_node_info.txt", header = T)
+o <- merge(o, nodes.labels, by.x = "event", by.y = "network_name")
+
+## reorder
+# o$label <- factor(o$label, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_mean,op$nodesize)),]$label)))
+
+op <- o %>% 
+        group_by(event) %>%
+        dplyr::summarize(nodesize = n(),
+                  edgelength_mean = mean(event_min),
+                  edgelength_median = median(event_min))
+op <- merge(op, nodes.labels, by.y = "network_name", by.x = "event")
+op <- op[order(op$edgelength_mean,-op$nodesize),]
+
+# op$label <- factor(op$label, levels=op[rev(order(op$edgelength_mean,-op$nodesize)),]$label)
+op[op$event=="transplant", "nodesize"] <- 0 ## comment out this line to obtain size of transplant
+
+data.outcome <- o %>% filter(english_name != "transplant")
+
+  
+```
+
+
+if one or more of cardiovascular and renal events
+```{r}
+
+## all events: to count the frequencies of single and >single events in each LKD
+data.outcome %>%
+  group_by(subject_ID) %>%
+  dplyr::summarize(multipleDiseases = n()) %>%
+  ggplot(aes(multipleDiseases)) +
+  geom_bar(aes(y = ..count../sum(..count..)))
+
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig5-LKDs_singleConditions/distribution of num of conditions.pdf")
+
+## find out proportion of renal and cardiovascular events in single LKDs
+a <- data.outcome %>%
+  group_by(subject_ID) %>%
+  dplyr::summarize(multipleDiseases = n())
+
+
+data.outcome$english_name <- factor(data.outcome$english_name, levels = c("kidney_transplant", "kidney_transplant_waitinglist", "Post-operative_Dialysis", "transplant", "Vascular_Injury", "New_Hypertension_Diagnosis", "Proteinuria", "Diabetes_Mellitus", "Myocardial_Infarction", "Dysrhythmia", "Stroke", "Chronic/Maintenance_Dialysis", "Hematuria", "Nephrolithiasis", "Microalbuminuria", "Cardiac_Arrest", "Post-operative_Renal_Failure", "Bladder_Injury", "Bowel_Injury", "Chronic_Incisional_Pain", "Complication_of_Intubation", "Epididymitis", "Incisional_Hernia", "Pancreatitis", "Pneumothorax", "Post-operative_DVT", "Post-operative_Hemorrhage", "Post-operative_Ileus/SBO", "Post-operative_Reintubation", "Pulmonary_Embolism", "Reoperation_for_Incisional_Hernia", "Rhabdomyolysis", "Splenic_Injury", "Sudden_Death", "Testicular_Pain", "Wound_Dehiscence", "Wound_Seroma"))
+
+b <- data.outcome %>% 
+  merge(a) %>% 
+  filter(multipleDiseases == 1)
+
+data.outcome %>% 
+  merge(a) %>% 
+  filter(multipleDiseases == 1) %>%
+  ggplot(aes(multipleDiseases, fill = english_name)) +
+  geom_bar(aes(y = ..count.. / sum(..count..))) +
+  scale_fill_manual(values = c("#8dd3c7", "#ccebc5", "#bebada", "#b3de69", "#fb8072", "#ffed6f", "#ffffb3", "#80b1d3", "#fccde5", "#fdb462", "#d9d9d9", "#bc80bd", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50", "grey50"))
+  
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig5-LKDs_singleConditions/distribution of 1 condition.pdf")
+
+c <- data.frame(table(a$multipleDiseases))
+c <- c %>% mutate(proportion = Freq/sum(c$Freq))
+d <- data.frame(table(b$english_name))
+d <- d[ order(-d$Freq), ] %>% mutate(proportion = Freq/sum(d$Freq))
+
+
+(d[d$Var1 == "New_Hypertension_Diagnosis", "proportion"] + 
+    d[d$Var1 == "Proteinuria", "proportion"] + 
+    d[d$Var1 == "Diabetes_Mellitus", "proportion"] + 
+    d[d$Var1 == "Myocardial_Infarction", "proportion"] +
+    d[d$Var1 == "Dysrhythmia", "proportion"] +
+    d[d$Var1 == "Stroke", "proportion"] + 
+    d[d$Var1 == "Chronic/Maintenance_Dialysis", "proportion"] + 
+    d[d$Var1 == "Hematuria", "proportion"] + 
+    d[d$Var1 == "Nephrolithiasis", "proportion"] +
+    d[d$Var1 == "Microalbuminuria", "proportion"] +
+    d[d$Var1 == "Cardiac_Arrest", "proportion"] +
+    d[d$Var1 == "Post-operative_Renal_Failure", "proportion"]  ) 
+
+(d[d$Var1 == "New_Hypertension_Diagnosis", "Freq"] + 
+    d[d$Var1 == "Proteinuria", "Freq"] + 
+    d[d$Var1 == "Diabetes_Mellitus", "Freq"] + 
+    d[d$Var1 == "Myocardial_Infarction", "Freq"] +
+    d[d$Var1 == "Dysrhythmia", "Freq"] +
+    d[d$Var1 == "Stroke", "Freq"] + 
+    d[d$Var1 == "Chronic/Maintenance_Dialysis", "Freq"] + 
+    d[d$Var1 == "Hematuria", "Freq"] + 
+    d[d$Var1 == "Nephrolithiasis", "Freq"] +
+    d[d$Var1 == "Microalbuminuria", "Freq"] +
+    d[d$Var1 == "Cardiac_Arrest", "Freq"] +
+    d[d$Var1 == "Post-operative_Renal_Failure", "Freq"]  ) 
+```

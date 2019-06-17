@@ -1,0 +1,398 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# input and libraries
+```{r}
+library(survival)
+library(dplyr)
+library(ggplot2)
+library(survminer)
+library(tidyr)
+
+## kidney only
+## for some reason read.table didn't work
+# setwd("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/survival")
+data.outcome <- read.delim("final.iTx.posttx_outcomes.v5.kidney.txt", header = T, sep = "\t", stringsAsFactors = F)
+
+
+# ## input - relive only
+# outcomes <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/immport2cytoscape/txp_immport2cytoscape_seq-merged-relive01_02_03_immport2tsv-noControls_outcomes_kidney.txt", sep = "\t", header = T, stringsAsFactors = F)
+# 
+# ## subsetting
+# # those with no time points, excluding those lines with NA
+# outcomes.notimepoints <- outcomes %>% 
+#                     filter(eventA_min == 5000000000 | eventB_min == 5000000000) %>%
+#                     filter(eventA_min != 5000000001 & eventB_min != 5000000001)
+# # those with time points
+# # this is my nw
+# outcomes.wtimepoints <- outcomes %>% 
+#                     filter(eventA_min != 5000000000 & eventB_min != 5000000000) %>%
+#                     filter(eventA_min != 5000000001 & eventB_min != 5000000001)
+# 
+# a <- outcomes.wtimepoints %>% select(subject_ID, eventA)
+# b <- outcomes.wtimepoints %>% select(subject_ID, eventB)
+# names(a) <- c("subject_ID","event")
+# names(b) <- c("subject_ID","event")
+# 
+# node_info <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/cytoscape/network_info/tx_LD_outcome_node_info.txt", sep = "\t", header = T, stringsAsFactors = F)
+# data.outcome <- rbind(a,b) %>% 
+#   filter(event != "transplant") %>%
+#   merge(node_info)
+
+```
+
+# survival analyses
+## input data
+```{r}
+## do survival analysis for those with:
+## (1) everything
+## (2) subsets
+## New_Hypertension_Diagnosis = CMP_NHYPDX
+## Diabetes_Mellitus          = CMP_DIABETES_MELLITUS
+## Postoperative_Ileus        = CMP_POP_ILEUS
+## Proteinuria                = CMP_RENAL_PROTEIN
+## Stroke                     = CMP_STROKE
+## Dysrhythmia                = CMP_DYSR
+do.ht <- data.outcome %>% filter(CMP_NHYPDX == "Yes") %>% 
+                                    mutate(outcome = "New_Hypertension")
+do.dm <- data.outcome %>% filter(CMP_DIABETES_MELLITUS == "Yes") %>% 
+                                    mutate(outcome = "Diabetes_Mellitus")
+do.il <- data.outcome %>% filter(CMP_POP_ILEUS == "Yes") %>% 
+                                    mutate(outcome = "Postoperative_Ileus")
+do.pu <- data.outcome %>% filter(CMP_RENAL_PROTEIN == "Yes") %>% 
+                                    mutate(outcome = "Proteinuria")
+do.st <- data.outcome %>% filter(CMP_STROKE == "Yes") %>% 
+                                    mutate(outcome = "Stroke")
+do.dy <- data.outcome %>% filter(CMP_DYSR == "Yes") %>% 
+                                    mutate(outcome = "Dysrhythmia")
+
+### this combination has redundancies cos there are individuals with multiple outcomes
+do.z.redun <- rbind(do.ht,do.dm,do.il,do.pu,do.st,do.dy)
+
+
+## (3) if one or more of 
+## New_Hypertension_Diagnosis = CMP_NHYPDX
+## Diabetes_Mellitus          = CMP_DIABETES_MELLITUS
+## Postoperative_Ileus        = CMP_POP_ILEUS
+## Proteinuria                = CMP_RENAL_PROTEIN
+## Stroke                     = CMP_STROKE
+## Dysrhythmia                = CMP_DYSR
+do.multiple <- data.outcome %>% 
+                       filter(CMP_NHYPDX == "Yes" |
+                              CMP_DIABETES_MELLITUS == "Yes" |
+                              CMP_POP_ILEUS == "Yes" |
+                              CMP_RENAL_PROTEIN == "Yes" |
+                              CMP_STROKE == "Yes" |
+                              CMP_DYSR == "Yes") %>%
+                       mutate(CMP_NHYPDX1 = ifelse(CMP_NHYPDX == "Yes",1,0)) %>%
+                       mutate(CMP_DIABETES_MELLITUS1 = ifelse(CMP_DIABETES_MELLITUS == "Yes",1,0)) %>%
+                       mutate(CMP_POP_ILEUS1 = ifelse(CMP_POP_ILEUS == "Yes",1,0)) %>%
+                       mutate(CMP_RENAL_PROTEIN1 = ifelse(CMP_RENAL_PROTEIN == "Yes",1,0)) %>%
+                       mutate(CMP_STROKE1 = ifelse(CMP_STROKE == "Yes",1,0)) %>%
+                       mutate(CMP_DYSR1 = ifelse(CMP_DYSR == "Yes",1,0)) %>%
+                       mutate(multipleDiseases = CMP_NHYPDX1 + CMP_DIABETES_MELLITUS1 + CMP_POP_ILEUS1 + CMP_RENAL_PROTEIN1 + CMP_STROKE1 + CMP_DYSR1)
+
+## proportion of people with 1 or 2 or 3 bignode diseases
+do.multiple %>% 
+  ggplot(aes(x = multipleDiseases)) + 
+  geom_bar(aes(y = ..count../sum(..count..)))
+
+
+
+
+```
+## if one or more of cardiovascular and renal events
+```{r}
+## (3) if one or more of 
+## New_Hypertension_Diagnosis = CMP_NHYPDX
+## Diabetes_Mellitus          = CMP_DIABETES_MELLITUS
+## Proteinuria                = CMP_RENAL_PROTEIN
+## Stroke                     = CMP_STROKE
+## Dysrhythmia                = CMP_DYSR
+## Myocardial infarction      = CMP_MI
+## Cardiac Arrest             = CMP_CARDARR
+## Hematuria                  = CMP_RENAL_HEMT
+## Nephrolithiasis            = CMP_RENAL_NEPH
+## Microalbuminuria           = CMP_RENAL_MICRO
+
+## Chronic/Maintenance Dialysis
+## Post-operative renal failure
+## Kidney waiting list
+## Kidney tx
+do.multiple <- data.outcome %>% 
+                       filter(CMP_NHYPDX == "Yes" | 
+                              CMP_DIABETES_MELLITUS == "Yes" | 
+                              CMP_RENAL_PROTEIN == "Yes" | 
+                              CMP_STROKE == "Yes" | 
+                              CMP_DYSR == "Yes" | 
+                              CMP_MI == "Yes" | 
+                              CMP_CARDARR == "Yes" | 
+                              CMP_RENAL_HEMT == "Yes" | 
+                              CMP_RENAL_NEPH == "Yes" | 
+                              CMP_RENAL_MICRO == "Yes") %>%
+                       mutate(CMP_EPIDIDYMITIS1 = ifelse( CMP_EPIDIDYMITIS == "Yes",1,0)) %>% 
+                      mutate(CMP_POP_RETUB1 = ifelse( CMP_POP_RETUB == "Yes",1,0)) %>% 
+                      mutate(CMP_CARDARR1 = ifelse( CMP_CARDARR == "Yes",1,0)) %>% 
+                      mutate(CMP_STROKE1 = ifelse( CMP_STROKE == "Yes",1,0)) %>% 
+                      mutate(CMP_PULEM1 = ifelse( CMP_PULEM == "Yes",1,0)) %>% 
+                      mutate(CMP_MI1 = ifelse( CMP_MI == "Yes",1,0)) %>% 
+                      mutate(CMP_BLAD1 = ifelse( CMP_BLAD == "Yes",1,0)) %>% 
+                      mutate(CMP_BOWEL1 = ifelse( CMP_BOWEL == "Yes",1,0)) %>% 
+                      mutate(CMP_SPLEN1 = ifelse( CMP_SPLEN == "Yes",1,0)) %>% 
+                      mutate(CMP_VASCU1 = ifelse( CMP_VASCU == "Yes",1,0)) %>% 
+                      mutate(CMP_WNDDEH1 = ifelse( CMP_WNDDEH == "Yes",1,0)) %>% 
+                      mutate(CMP_WNDSER1 = ifelse( CMP_WNDSER == "Yes",1,0)) %>% 
+                      mutate(CMP_PNTHX1 = ifelse( CMP_PNTHX == "Yes",1,0)) %>% 
+                      mutate(CMP_COMP_INTUB1 = ifelse( CMP_COMP_INTUB == "Yes",1,0)) %>% 
+                      mutate(CMP_INCHER1 = ifelse( CMP_INCHER == "Yes",1,0)) %>% 
+                      mutate(CMP_REOP_INCHER1 = ifelse( CMP_REOP_INCHER == "Yes",1,0)) %>% 
+                      mutate(CMP_CIP1 = ifelse( CMP_CIP == "Yes",1,0)) %>% 
+                      mutate(CMP_TESTPN1 = ifelse( CMP_TESTPN == "Yes",1,0)) %>% 
+                      mutate(CMP_PANCREAT1 = ifelse( CMP_PANCREAT == "Yes",1,0)) %>% 
+                      mutate(CMP_RHAB1 = ifelse( CMP_RHAB == "Yes",1,0)) %>% 
+                      mutate(CMP_POP_RF1 = ifelse( CMP_POP_RF == "Yes",1,0)) %>% 
+                      mutate(CMP_POP_DIAL1 = ifelse( CMP_POP_DIAL == "Yes",1,0)) %>% 
+                      mutate(CMP_POP_DVT1 = ifelse( CMP_POP_DVT == "Yes",1,0)) %>% 
+                      mutate(CMP_POP_HEM1 = ifelse( CMP_POP_HEM == "Yes",1,0)) %>% 
+                      mutate(CMP_POP_ILEUS1 = ifelse( CMP_POP_ILEUS == "Yes",1,0)) %>% 
+                      mutate(CMP_RENAL_HEMT1 = ifelse( CMP_RENAL_HEMT == "Yes",1,0)) %>% 
+                      mutate(CMP_RENAL_MICRO1 = ifelse( CMP_RENAL_MICRO == "Yes",1,0)) %>% 
+                      mutate(CMP_RENAL_PROTEIN1 = ifelse( CMP_RENAL_PROTEIN == "Yes",1,0)) %>% 
+                      mutate(CMP_RENAL_NEPH1 = ifelse( CMP_RENAL_NEPH == "Yes",1,0)) %>% 
+                      mutate(CMP_DYSR1 = ifelse( CMP_DYSR == "Yes",1,0)) %>% 
+                      mutate(CMP_SD1 = ifelse( CMP_SD == "Yes",1,0)) %>% 
+                      mutate(CMP_DIABETES_MELLITUS1 = ifelse( CMP_DIABETES_MELLITUS == "Yes",1,0)) %>%
+                      mutate(CMP_LIST1 = ifelse( CMP_LIST == "Yes",1,0)) %>% 
+                      mutate(CMP_REC_TRANS1 = ifelse( CMP_REC_TRANS == "Yes",1,0)) %>% 
+                      mutate(CMP_CMD1 = ifelse( CMP_CMD == "Yes",1,0)) %>% 
+                      mutate(CMP_NHYPDX1 = ifelse( CMP_NHYPDX == "Yes",1,0)) %>%
+  select(Sub_Org_Accession, CMP_EPIDIDYMITIS1, CMP_POP_RETUB1, CMP_CARDARR1, CMP_STROKE1, CMP_PULEM1, CMP_MI1, CMP_BLAD1, CMP_BOWEL1, CMP_SPLEN1, CMP_VASCU1, CMP_WNDDEH1, CMP_WNDSER1, CMP_PNTHX1, CMP_COMP_INTUB1, CMP_INCHER1, CMP_REOP_INCHER1, CMP_CIP1, CMP_TESTPN1, CMP_PANCREAT1, CMP_RHAB1, CMP_POP_RF1, CMP_POP_DIAL1, CMP_POP_DVT1, CMP_POP_HEM1, CMP_POP_ILEUS1, CMP_RENAL_HEMT1, CMP_RENAL_MICRO1, CMP_RENAL_PROTEIN1, CMP_RENAL_NEPH1, CMP_DYSR1, CMP_SD1, CMP_DIABETES_MELLITUS1, CMP_LIST1, CMP_REC_TRANS1, CMP_CMD1, CMP_NHYPDX1)
+
+do.multiple[is.na(do.multiple)] <- 0
+
+do.multiple <- do.multiple %>%
+  mutate(multipleDiseases = CMP_EPIDIDYMITIS1 + CMP_POP_RETUB1 + CMP_CARDARR1 + CMP_STROKE1 + CMP_PULEM1 + CMP_MI1 + CMP_BLAD1 + CMP_BOWEL1 + CMP_SPLEN1 + CMP_VASCU1 + CMP_WNDDEH1 + CMP_WNDSER1 + CMP_PNTHX1 + CMP_COMP_INTUB1 + CMP_INCHER1 + CMP_REOP_INCHER1 + CMP_CIP1 + CMP_TESTPN1 + CMP_PANCREAT1 + CMP_RHAB1 + CMP_POP_RF1 + CMP_POP_DIAL1 + CMP_POP_DVT1 + CMP_POP_HEM1 + CMP_POP_ILEUS1 + CMP_RENAL_HEMT1 + CMP_RENAL_MICRO1 + CMP_RENAL_PROTEIN1 + CMP_RENAL_NEPH1 + CMP_DYSR1 + CMP_SD1 + CMP_DIABETES_MELLITUS1 + CMP_LIST1 + CMP_REC_TRANS1 + CMP_CMD1 + CMP_NHYPDX1)
+  
+
+## proportion of people with the above diseases
+do.multiple %>% 
+  ggplot(aes(x = multipleDiseases)) + 
+  geom_bar(aes(y = ..count../sum(..count..)))
+
+## just the ones
+do.multiple %>%
+  filter(multipleDiseases == 3) %>%
+  select(-multipleDiseases) %>% 
+  gather(event, number, -Sub_Org_Accession) %>%
+  filter(number != 0) %>%
+  ggplot(aes(x = number, fill = event)) +
+  geom_bar(aes(y = ..count../sum(..count..)))
+```
+
+
+## variable prep
+```{r}
+## max days posttx -- 40 years = 14600 days
+## ceiling(maxtime/365/5) * 5
+maxtime = max(na.omit(data.outcome$CMP_POPRF_DOO_MIN),
+              na.omit(data.outcome$CMP_POPDIAL_DOO_MIN),
+              na.omit(data.outcome$CMP_DO_LIST_MIN),
+              na.omit(data.outcome$CMP_DOTRANSP_MIN),
+              na.omit(data.outcome$CMP_CMD_DOO_MIN))
+
+```
+
+## define survival endpoints and functions
+```{r}
+## define 4 ESRD endpoints
+## CMP_POP_RF   = Post-operative_Renal_Failure
+## CMP_POP_DIAL = Post-operative_Dialysis
+## CMP_LIST	    = kidney_transplant_waitinglist
+## CMP_CMD	    = Chronic/Maintenance_Dialysis
+## create 2 new cols 
+## (1) event - if subject has either one of the ESRD
+## (2) time  - if subject has at least one timing available signifying ESRD, if multiple timings, take the earliest onset of the ESRD
+data.outcome.surv <- data.outcome %>% 
+                      mutate(event = ifelse(CMP_POP_RF == "Yes" |
+                                            CMP_POP_DIAL == "Yes" |
+                                            CMP_LIST == "Yes" |
+                                            CMP_REC_TRANS == "Yes" |
+                                            CMP_CMD == "Yes", 1, 0)) %>%
+                      mutate(time = ifelse(event == 0, ceiling(maxtime/365/5) * 5 * 365, 
+                                    ifelse(CMP_POPRF_DOO_MIN == "NA" & 
+                                           CMP_POPDIAL_DOO_MIN == "NA" & 
+                                           CMP_DO_LIST_MIN == "NA" & 
+                                           CMP_DOTRANSP_MIN == "NA" & 
+                                           CMP_CMD_DOO_MIN == "NA", NA, 
+                                          pmin(CMP_POPRF_DOO_MIN,
+                                               CMP_POPDIAL_DOO_MIN,
+                                               CMP_DO_LIST_MIN,
+                                               CMP_DOTRANSP_MIN,
+                                               CMP_CMD_DOO_MIN, na.rm = T)))) %>%
+                      select(Sub_Org_Accession, event, time)
+
+## do.z.redundant
+do.z.redun.surv <- do.z.redun %>% 
+                      mutate(event = ifelse(CMP_POP_RF == "Yes" |
+                                            CMP_POP_DIAL == "Yes" |
+                                            CMP_LIST == "Yes" |
+                                            CMP_REC_TRANS == "Yes" |
+                                            CMP_CMD == "Yes", 1, 0)) %>%
+                      mutate(time = ifelse(event == 0, ceiling(maxtime/365/5) * 5 * 365, 
+                                    ifelse(CMP_POPRF_DOO_MIN == "NA" & 
+                                           CMP_POPDIAL_DOO_MIN == "NA" & 
+                                           CMP_DO_LIST_MIN == "NA" & 
+                                           CMP_DOTRANSP_MIN == "NA" & 
+                                           CMP_CMD_DOO_MIN == "NA", NA, 
+                                          pmin(CMP_POPRF_DOO_MIN,
+                                               CMP_POPDIAL_DOO_MIN,
+                                               CMP_DO_LIST_MIN,
+                                               CMP_DOTRANSP_MIN,
+                                               CMP_CMD_DOO_MIN, na.rm = T)))) %>%
+                      select(Sub_Org_Accession, event, time, outcome)
+
+## do.multiple
+do.multiple.surv <- do.multiple %>% 
+                      mutate(event = ifelse(CMP_POP_RF == "Yes" |
+                                            CMP_POP_DIAL == "Yes" |
+                                            CMP_LIST == "Yes" |
+                                            CMP_REC_TRANS == "Yes" |
+                                            CMP_CMD == "Yes", 1, 0)) %>%
+                      mutate(time = ifelse(event == 0, ceiling(maxtime/365/5) * 5 * 365, 
+                                    ifelse(CMP_POPRF_DOO_MIN == "NA" & 
+                                           CMP_POPDIAL_DOO_MIN == "NA" & 
+                                           CMP_DO_LIST_MIN == "NA" & 
+                                           CMP_DOTRANSP_MIN == "NA" & 
+                                           CMP_CMD_DOO_MIN == "NA", NA, 
+                                          pmin(CMP_POPRF_DOO_MIN,
+                                               CMP_POPDIAL_DOO_MIN,
+                                               CMP_DO_LIST_MIN,
+                                               CMP_DOTRANSP_MIN,
+                                               CMP_CMD_DOO_MIN, na.rm = T)))) %>%
+                      select(Sub_Org_Accession, event, time, multipleDiseases)
+
+```
+
+## plot survival Kaplan Meier curve
+```{r}
+# survival fxn of outcomes
+
+## (1) all
+data.outcome.surv.table <- Surv(data.outcome.surv$time/365, data.outcome.surv$event) ## survival table
+fit <- survfit(data.outcome.surv.table~1)
+summary(fit)
+plot(fit, xlab="t", ylab=expression(hat(S)*"(t)"), ylim = c(0.98,1)) ## base plot
+ggsurvplot(fit, data = data.outcome.surv, risk.table = T, ylim = c(0.98,1)) ## survminer
+
+## (2) subsets
+do.z.redun.surv.table <- Surv(do.z.redun.surv$time/365, do.z.redun.surv$event) ## survival table
+fit <- survfit(do.z.redun.surv.table ~ outcome, data = do.z.redun.surv)
+summary(fit)
+p <- ggsurvplot(
+  fit, 
+  xlab = 'Time (years)',
+  data = do.z.redun.surv, 
+  # conf.int = T,
+  size = 1, 
+  legend.labs = c("Diabetes_Mellitus","Dysrhythmia",
+                  "New_Hypertension","Postoperative_Ileus",
+                  "Proteinuria","Stroke"),
+  ggtheme = theme_bw(),
+  risk.table = T, 
+  ylim = c(0.9,1)) ## survminer
+
+print(p)
+
+## (3) multiple diseases
+do.multiple.surv.table <- Surv(do.multiple.surv$time/365, do.multiple.surv$event) ## survival table
+fit <- survfit(do.multiple.surv.table ~ multipleDiseases, data = do.multiple.surv)
+summary(fit)
+p <- ggsurvplot(
+  fit, 
+  xlab = 'Time (years)',
+  data = do.multiple.surv, 
+  # conf.int = T,
+  palette = "Set2",
+  size = 1, 
+  legend.labs = c("1","2","3","4","5"),
+  ggtheme = theme_bw(),
+  risk.table = T, 
+  ylim = c(0.9,1)) ## survminer
+
+print(p)
+
+```
+
+
+
+# R example data
+```{r example}
+data(ovarian)
+## Create a survival object using Surv
+## a plus sign suffixed for every censored data
+S1 = Surv(ovarian$futime, ovarian$fustat)
+S1
+
+## remove all censored data
+fit1 = survfit(S1~1)
+summary(fit1)
+plot(fit1, xlab="t", ylab=expression(hat(S)*"(t)"))
+
+
+## doing parametric fitting 
+## (use max likelihood estimation to est parameters in the model)
+# exponential
+s2 = survreg(S1~1, ovarian, dist="exponential")
+summary(s2)
+```
+
+# another R example
+```{r}
+#fit a Kaplan-Meier and plot it
+fit <- survfit(Surv(time, status) ~ x, data = aml) 
+plot(fit, lty = 2:3) 
+legend(100, .8, c("Maintained", "Nonmaintained"), lty = 2:3) 
+
+#fit a Cox proportional hazards model and plot the  
+#predicted survival for a 60 year old 
+fit <- coxph(Surv(futime, fustat) ~ age, data = ovarian) 
+plot(survfit(fit, newdata=data.frame(age=60)),
+     xscale=365.25, xlab = "Years", ylab="Survival") 
+
+# Here is the data set from Turnbull
+#  There are no interval censored subjects, only left-censored (status=3),
+#  right-censored (status 0) and observed events (status 1)
+#
+#                             Time
+#                         1    2   3   4
+# Type of observation
+#           death        12    6   2   3
+#          losses         3    2   0   3
+#      late entry         2    4   2   5
+#
+tdata <- data.frame(time  =c(1,1,1,2,2,2,3,3,3,4,4,4),
+                    status=rep(c(1,0,2),4),
+                    n     =c(12,3,2,6,2,4,2,0,2,3,3,5))
+fit  <- survfit(Surv(time, time, status, type='interval') ~1, 
+              data=tdata, weight=n)
+
+#
+# Time to progression/death for patients with monoclonal gammopathy
+#  Competing risk curves (cumulative incidence)
+fitKM <- survfit(Surv(stop, event=='progression') ~1, data=mgus1,
+                    subset=(start==0))
+
+fitCI <- survfit(Surv(stop, status*as.numeric(event), type="mstate") ~1,
+                    data=mgus1, subset=(start==0))
+
+# CI curves are always plotted from 0 upwards, rather than 1 down
+plot(fitCI, xscale=365.25, xmax=7300, mark.time=FALSE,
+            col=2:3, xlab="Years post diagnosis of MGUS")
+lines(fitKM, fun='event', xmax=7300, mark.time=FALSE,
+            conf.int=FALSE)
+text(10, .4, "Competing risk: death", col=3)
+text(16, .15,"Competing risk: progression", col=2)
+text(15, .30,"KM:prog")
+```

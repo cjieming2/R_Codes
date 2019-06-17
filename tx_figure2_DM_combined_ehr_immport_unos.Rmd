@@ -6,13 +6,13 @@ output: html_notebook
 # library and function
 ```{r}
 ## my own library
-source("/Users/chenj220/R_codes/jmRlib.R")
+# source("/Users/chenj220/R_codes/jmRlib.R")
 
-library(RImmPort)
+# library(RImmPort)
 library(DBI)
 library(sqldf)
 library(dplyr)
-library(RMySQL)
+# library(RMySQL)
 library(ggplot2)
 library(gridExtra)
 library(gapminder)
@@ -171,6 +171,12 @@ median(b3.dd[b3.dd$Sex == "Female" & b3.dd$Data_Source == "UNOS_OPTN",]$Donation
 median(b3.dd[b3.dd$Sex == "Male" & b3.dd$Data_Source == "UNOS_OPTN",]$Donation_Age)
 median(b3.dd[b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
 
+### stat summary for age in LKDs in ImmPort
+median(b3.dd[b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
+min(b3.dd[b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
+max(b3.dd[b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
+sd(b3.dd[b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
+summary(b3.dd[b3.dd$Data_Source == "ImmPort_DR19",]$Donation_Age)
 ```
 
 ### bar plot
@@ -239,6 +245,44 @@ ks.test(prob.x,prob.y, exact=TRUE, alternative="two.sided")
 # qqplot(prob.x, prob.y)
 # abline(0,1, col="red", lty=3)
 
+### looking for critical value
+conf.level <- 0.95
+pksone <- function(x) {
+    k <- seq(1:20)
+    1 + 2 * sum( (-1)^k * exp(- 2 * k^2 * x^2))
+}
+qksone <- function(p) {
+    if (p < 0.5)
+        stop("don't do less than 50% confidence")
+    foo <- function(x) pksone(x) - p
+    uniroot(foo, c(0.5, 10))
+}
+## critical value, C(alpha=0.025) = 1.36 at 95% CI 2-sided
+print(crit.val <- qksone(conf.level)$root)
+## confidence interval
+pksone(crit.val)
+
+# this CI calculation is for 1 distribution
+# library(stepfun)
+# fred <- ecdf(x)
+# n <- length(x)
+# x <- sort(x)
+# sally <- stepfun(x, pmin(seq(0, n) / n + crit.val / sqrt(n), 1))
+# herman <- stepfun(x, pmax(seq(0, n) / n - crit.val / sqrt(n), 0))
+# plot(fred)
+# plot(sally, lty=2, add=TRUE, do.points=FALSE)
+# plot(herman, lty=2, add=TRUE, do.points=FALSE)
+
+# for 2 distributions
+# https://www.webdepot.umontreal.ca/Usagers/angers/MonDepotPublic/STT3500H10/Critical_KS.pdf
+# https://daithiocrualaoich.github.io/kolmogorov_smirnov/
+
+n1 <- length(a$count.x) # sample size of 1st pop
+n2 <- length(a$count.y) # sample size of 2nd pop
+Da <- crit.val * sqrt((n1 + n2) / (n1 * n2))
+```
+
+```{r}
 
 ## MALE
 a <- merge(unosopt.b3[unosopt.b3$Sex=="Male",], immport.b3[immport.b3$Sex=="Male",], by="Donation_Age", all.x=TRUE, all.y=TRUE)
@@ -505,6 +549,18 @@ b4.r1 %>%
   scale_fill_brewer(palette = "Set1") 
 ```
 
+### chisq distribution for paper
+```{r}
+# library(dplyr)
+# b4.r1_immport_unos <- b4.r1 %>% filter(Data_Source == "ImmPort_DR19" | Data_Source == "UNOS_OPTN") %>%
+#   mutate(name = paste0(Donation_Age,"_",Race))
+# 
+# b4.r1_immport <- b4.r1_immport_unos %>%
+#   filter(Data_Source == "ImmPort_DR19")
+#   select(name, )
+### refer to tx_suppfig3_DM_immport_unos.Rmd
+```
+
 ```{r}
 ## plot: sex vs race
 ## stacked bar split by gender and stacked by ethnicity
@@ -609,5 +665,17 @@ a[is.na(a)] = 0
 prob.x <- a$count.x/unos.t
 prob.y <- a$count.y/imm.t
 ks.test(prob.x, prob.y, exact=TRUE, alternative="two.sided")
+
+
+## multinomial chisq test
+library(EMT)
+b4.r6 <- ddply(.data = b4.rr, .variables = c("Donation_Age","Race","Data_Source"), .fun=summarise, count = length(Donation_Age), proportion = count/sum.n[1])
+
+obs_imm <- b4.rr %>% filter(Data_Source == "ImmPort_DR19") %>% group_by(Race) %>% dplyr::summarize(n = n()) %>% filter(!(Race == "Other")) 
+exp_uno <- b4.rr %>% filter(Data_Source == "UNOS_OPTN") %>% group_by(Race) %>% dplyr::summarize(n = n()) %>% mutate(prob = n/sum(n))
+# out <- multinomial.test(obs_imm$n, exp_uno$prob, useChisq = FALSE, MonteCarlo = FALSE, ntrial = 10, atOnce = 1000000) ## either it takes too long or doesnt seem to work 
+
+## pearson's chisq test comparing both
+chisqresults <- chisq.test(obs_imm$n, exp_uno$prob)
 
 ```

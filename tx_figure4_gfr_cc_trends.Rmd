@@ -1,0 +1,562 @@
+---
+title: "tx_fig4_gfr_cc_trends"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+source("/Users/chenj220/R_codes/tx_figure4_gfr_cc_trends_fxns.R")
+```
+
+
+Input
+```{r}
+
+## getting 1401 patients, 36 conditions
+o.ori <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/immport2cytoscape/txp_immport2outcomes-merged-relive01_02_03_immport2tsv-noControls_posttx_outcomes_kidney.txt", header = T, stringsAsFactors = F)
+
+
+o <- o.ori %>%
+        filter(!is.na(event_min) & !is.na(event_max)) %>%
+        filter(event_min >= 0)
+
+## add the tx node only on non-NA individuals
+tx <- data.frame(subject_ID=unique(o$subject_ID), event="transplant",event_min=0,event_max=0)
+o <- rbind(o, tx)
+
+nodes.labels <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/cytoscape/network_info/tx_LD_outcome_node_info.txt", header = T)
+o <- merge(o, nodes.labels, by.x = "event", by.y = "network_name")
+
+## reorder
+# o$label <- factor(o$label, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_mean,op$nodesize)),]$label)))
+
+op <- o %>% 
+        group_by(event) %>%
+        summarize(nodesize = n(),
+                  edgelength_mean = mean(event_min),
+                  edgelength_median = median(event_min))
+op <- merge(op, nodes.labels, by.y = "network_name", by.x = "event")
+op <- op[order(op$edgelength_mean,-op$nodesize),]
+
+# op$label <- factor(op$label, levels=op[rev(order(op$edgelength_mean,-op$nodesize)),]$label)
+op[op$event=="transplant", "nodesize"] <- 0 ## comment out this line to obtain size of transplant
+
+## 1401 patients, 36 conditions
+data.outcome <- o %>% filter(english_name != "transplant")
+
+## patients with multiple dzs
+data.outcome.multipleDzs <- data.outcome %>%
+  group_by(subject_ID) %>%
+  summarize(multipleDiseases = n())
+```
+
+PRETX EXAM
+```{r}
+pretx <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/finals.iTx/final.iTx.pretx_exam.v9.txt", header = T, stringsAsFactors = F)
+
+## subset the table to get 1,401 patients with the following variables
+## wt, ht, serum creatinine, Urine creatinine, creatinine clearance, GFR(raw), GFR(BSA-corrected)
+nummyvar <- 10
+pretx_1401_myvar <- pretx %>%
+  filter(Sub_Org_Accession %in% unique(data.outcome$subject_ID)) %>%
+  select(Sub_Org_Accession, Organ, 
+         EVAL_DO_PHYSASSESS_MIN, ## date of exam
+         EVAL_WGT, ## wt
+         EVAL_HGT, ## ht
+         EVAL_SERUM_CREAT,   ## serum creatinine
+         EVAL_24HR_CREAT,    ## urine creatinine
+         EVAL_CREATININE_CL, EVAL_12_24HR_CREATININE, ## creatinine clearance
+         EVAL_GFR_TECH, EVAL_RAW_GFR, EVAL_GFR_CORR  ## GFR (RAW) and (BSA-corrected)
+         ) 
+
+## the other patients with no info
+pretx_majority_myvar <- pretx %>%
+  filter(!(Sub_Org_Accession %in% unique(data.outcome$subject_ID))) %>%
+  select(Sub_Org_Accession, Organ, 
+         EVAL_DO_PHYSASSESS_MIN, ## date of exam
+         EVAL_WGT, ## wt
+         EVAL_HGT, ## ht
+         EVAL_SERUM_CREAT,   ## serum creatinine
+         EVAL_24HR_CREAT,    ## urine creatinine
+         EVAL_CREATININE_CL, EVAL_12_24HR_CREATININE, ## creatinine clearance
+         EVAL_GFR_TECH, EVAL_RAW_GFR, EVAL_GFR_CORR  ## GFR (RAW) and (BSA-corrected)
+         ) 
+
+
+  ## calculate amt of missing data
+  ## seems that any individuals > 6 (out of 9 cols) missingness is quite empty
+  ## those with 5 missing are mostly missing pretx GFR data and creatinine data
+pretx_1401_myvar <- pretx_1401_myvar %>%  mutate(missingness = apply(is.na(pretx_1401_myvar[,3:ncol(pretx_1401_myvar)]), 1, sum))
+  ## calc max and min numb of days
+  ## arb pick EVAL_DO_PHYSASSESS_MIN to keep because all EVAL_DO_PHYSASSESS_MIN == EVAL_DO_PHYSASSESS_MAX
+  # mutate(days_diff = EVAL_DO_PHYSASSESS_MAX - EVAL_DO_PHYSASSESS_MIN)
+
+
+## level of missingness/days_diff in data
+ggplot(pretx_1401_myvar, aes(missingness)) +
+# ggplot(pretx_1401_myvar, aes(days_diff)) +
+  geom_bar() + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 18), 
+        axis.title.y = element_text(face = "bold",colour = "black", size = 18),
+        axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) + 
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 20)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) +
+  scale_x_continuous(breaks=0:nummyvar, labels=0:nummyvar)
+
+
+## distribution of days before transplant
+## there is a whole range from -4000 to +2000
+ggplot(pretx_1401_myvar, aes(EVAL_DO_PHYSASSESS_MIN)) +
+  geom_bar() + 
+  theme(axis.title.x = element_text(face = "bold",colour = "black", size = 18), 
+        axis.title.y = element_text(face = "bold",colour = "black", size = 18),
+        axis.text.x = element_text(size = 15), axis.text.y = element_text(size = 15)) + 
+  theme(plot.title = element_text(lineheight = 50, face = "bold", size = 20)) +
+  theme(legend.title = element_text(face = "bold", size = 15), legend.text = element_text(size = 14)) +
+  # scale_y_continuous(limits = c(0, 20)) + 
+  scale_x_continuous(limits = c(-150, 0))
+
+print(paste0("median = ", median(na.omit(pretx_1401_myvar$EVAL_DO_PHYSASSESS_MIN))))
+```
+
+POSTTX EXAM
+```{r}
+
+posttx <- read.delim("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/finals.iTx/final.iTx.posttx_exam.v6.txt", sep = "\t", header = T, stringsAsFactors = F)
+
+
+```
+
+
+#### GFR TRENDS ####
+```{r}
+## for convenience
+source("/Users/chenj220/R_codes/tx_figure4_gfr_cc_trends_fxns.R")
+
+## GFR VARIABLES
+posttx_1401_gfr <- posttx %>%
+  filter(Sub_Org_Accession %in% unique(data.outcome$subject_ID)) %>%
+  # posttx_choose_gfr_var_old()
+  posttx_choose_gfr_var()
+
+
+posttx_majority_gfr <- posttx %>%
+  filter(!(Sub_Org_Accession %in% unique(data.outcome$subject_ID))) %>%
+  posttx_choose_gfr_var()
+
+## check missingness per variable/column
+## decided to focus on those creatinine values at least 50% non-missingness
+posttx_1401_gfr_missingness_by_col <- 
+  data.frame(column = names(posttx_1401_gfr[3:ncol(posttx_1401_gfr)]), 
+             missingness = apply(is.na(posttx_1401_gfr[3:ncol(posttx_1401_gfr)]), 2, sum)) %>%
+  mutate(missingness_p = missingness / nrow(posttx_1401_gfr))
+
+posttx_1401_gfr_missingness_by_col %>% filter(missingness_p < 0.99)
+
+## gfr: merge pretx and posttx
+gfr <- pretx_1401_myvar %>% select(Sub_Org_Accession, EVAL_DO_PHYSASSESS_MIN, EVAL_GFR_CORR, EVAL_WGT) %>%
+  rename(pretx_gfr_date = EVAL_DO_PHYSASSESS_MIN, 
+         pretx_gfr = EVAL_GFR_CORR,
+         pretx_wgt = EVAL_WGT) %>%
+  merge(posttx_1401_gfr %>% select(-Organ))
+
+# for all pretx dates, if NA, set to 0 (time of tx) - assume time of tx
+gfr[is.na(gfr$pretx_gfr_date),"pretx_gfr_date"] <- 0
+
+## for all 1-point posttx dates, if NA, set to 2 years = 365*2 = 730 - assume a far time of tx for plotting purposes
+gfr[is.na(gfr$PSO_DO_GFR_MIN),"PSO_DO_GFR_MIN"] <- 365*2
+
+```
+
+# GFR SET1 
+```{r}
+#### split into 2 sets ####
+### set1: pretx and posttx one timepoint each; EVAL_DO_PHYSASSESS_MIN, EVAL_GFR_CORR vs PSO_GFR, PSO_DO_GFR_MIN
+gfr1 <- gfr %>% 
+  select(Sub_Org_Accession,
+         pretx_gfr_date, pretx_gfr,
+         PSO_DO_GFR_MIN, PSO_GFR) %>%
+  filter(!(is.na(pretx_gfr) | is.na(PSO_GFR))) %>% ## only keep non-missing pretx or posttx gfr values
+  filter(pretx_gfr_date <= 0 | PSO_DO_GFR_MIN > 0) %>% ## only keep pretx date before or on tx (neg or 0) and posttx date after tx (pos)
+  rename(gfr_date = pretx_gfr_date,
+         gfr = pretx_gfr,
+         gfr_date = PSO_DO_GFR_MIN,
+         gfr = PSO_GFR)
+
+## reformat into long form with only time and event cols, and combine with outcomes
+gfr1_f <- data.frame(rbind(gfr1[,1:3], gfr1[,c(1,4,5)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") 
+
+gfr1_f %>%
+  ggplot(aes(as.numeric(gfr_date), as.double(gfr), color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+## only retain those with 1 dz
+## reformat into long form with only time and event cols, and combine with outcomes
+gfr1_f1 <- data.frame(rbind(gfr1[,1:3], gfr1[,c(1,4,5)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(Sub_Org_Accession %in% (data.outcome.multipleDzs %>% filter(multipleDiseases == 1))$subject_ID)
+
+gfr1_f1 %>%
+  ggplot(aes(as.numeric(gfr_date), as.double(gfr), color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+```
+
+# GFR SET2
+```{r}
+###~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## set2: pretx and 3 posttx timepoints: GFR_DO_GFR1_MIN, GFR_GFR1,GFR_DO_GFR2_MIN, GFR_GFR2, GFR_DO_GFR1_MIN, GFR_GFR3
+gfr2 <- gfr %>% 
+  select(Sub_Org_Accession,
+         pretx_gfr_date, pretx_gfr,
+         GFR_DO_GFR1_MIN, GFR_GFR1, 
+           GFR_DO_GFR2_MIN, GFR_GFR2, 
+           GFR_DO_GFR3_MIN, GFR_GFR3) %>%
+  filter(!(is.na(pretx_gfr) | (is.na(GFR_GFR1) & 
+                                       is.na(GFR_GFR2) &
+                                       is.na(GFR_GFR3)))) %>% ## only keep non-missing pretx or posttx gfr values
+  filter(pretx_gfr_date <= 0) ## keep only pretx_date <= 0
+
+# the dates for the 3 _MINs are not in order!
+# reorder them
+rankdates_gfr <- function(data){
+  a <- rank(c(data[4],data[6],data[8]))
+  data <- c(data, a[1], a[2], a[3])
+  # data[4]  <- a[1]
+  # data[6] <- a[2]
+  # data[8]  <- a[3]
+  # data[9] <- a[1]; data[10] <- a[2]; data[11] <- a[3] ## for debugging/checking
+
+  return(data)
+}
+
+## no preprocessing of pretx_date (which can go a long time pretx)
+gfr2_tmp <- data.frame(t(apply(gfr2, 1, rankdates_gfr)))
+gfr2_tmp$gfr_order <- 0
+
+gfr2_tmp <- gfr2_tmp %>% 
+  rename(gfr_date = pretx_gfr_date,
+         gfr = pretx_gfr,
+         gfr_date = GFR_DO_GFR1_MIN,
+         gfr_order = GFR_DO_GFR1_MIN.1,
+         gfr = GFR_GFR1,
+         gfr_date = GFR_DO_GFR2_MIN,
+         gfr_order = GFR_DO_GFR2_MIN.1,
+         gfr = GFR_GFR2,
+         gfr_date = GFR_DO_GFR3_MIN,
+         gfr_order = GFR_DO_GFR3_MIN.1,
+         gfr = GFR_GFR3)
+
+
+## reformat into long form with only time and event cols, and combine with outcomes
+gfr2_f <- data.frame(rbind(gfr2_tmp[,c(1,13,2,3)], 
+                                 gfr2_tmp[,c(1,10,4,5)], 
+                                 gfr2_tmp[,c(1,11,6,7)], 
+                                 gfr2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(gfr))
+
+gfr2_f$gfr_order <- as.numeric(gfr2_f$gfr_order)
+gfr2_f$gfr_date  <- as.numeric(gfr2_f$gfr_date)
+gfr2_f$gfr       <- as.numeric(as.character(gfr2_f$gfr))
+
+gfr2_f %>%  
+  # ggplot(aes(as.numeric(gfr_order), as.numeric(levels(gfr))[gfr], color = Sub_Org_Accession)) +
+  ggplot(aes(gfr_order, gfr, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+## one 1dz
+## reformat into long form with only time and event cols, and combine with outcomes
+gfr2_f1 <- data.frame(rbind(gfr2_tmp[,c(1,13,2,3)], 
+                                 gfr2_tmp[,c(1,10,4,5)], 
+                                 gfr2_tmp[,c(1,11,6,7)], 
+                                 gfr2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(gfr)) %>%
+  filter(Sub_Org_Accession %in% (data.outcome.multipleDzs %>% filter(multipleDiseases == 1))$subject_ID)
+
+gfr2_f1$gfr_order <- as.numeric(gfr2_f1$gfr_order)
+gfr2_f1$gfr_date  <- as.numeric(gfr2_f1$gfr_date)
+gfr2_f1$gfr       <- as.numeric(as.character(gfr2_f1$gfr))
+
+gfr2_f1 %>%
+  # ggplot(aes(as.numeric(gfr_order), as.numeric(levels(gfr))[gfr], color = Sub_Org_Accession)) +
+  ggplot(aes(gfr_order, gfr, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+
+```
+
+
+#### WGT TRENDS ####
+# WGT SET2
+```{r}
+###~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## set2: pretx and 3 posttx timepoints: EVAL_DO_PHYSASSESS_MIN, EVAL_WGT, GFR_DO_GFR1_MIN, GFR_WGT1, GFR_DO_GFR2_MIN, GFR_WGT2, GFR_DO_GFR1_MIN, GFR_WGT3
+## use wgt dates and order but not actual weights (wgt)
+wgt2 <- gfr %>% 
+  select(Sub_Org_Accession,
+         pretx_gfr_date, pretx_wgt, 
+         GFR_DO_GFR1_MIN, GFR_WGT1, 
+           GFR_DO_GFR2_MIN, GFR_WGT2, 
+           GFR_DO_GFR3_MIN, GFR_WGT3) %>%
+  filter(!(is.na(pretx_wgt) | (is.na(GFR_WGT1) & 
+                                       is.na(GFR_WGT2) &
+                                       is.na(GFR_WGT3)))) %>% ## only keep non-missing pretx or posttx wgt values
+  filter(pretx_gfr_date <= 0) ## keep only pretx_date <= 0
+
+# the dates for the 3 _MINs are not in order!
+# reorder them
+rankdates_wgt <- function(data){
+  a <- rank(c(data[4],data[6],data[8]))
+  data <- c(data, a[1], a[2], a[3])
+  # data[4]  <- a[1]
+  # data[6] <- a[2]
+  # data[8]  <- a[3]
+  # data[9] <- a[1]; data[10] <- a[2]; data[11] <- a[3] ## for debugging/checking
+
+  return(data)
+}
+
+## no preprocessing of pretx_date (which can go a long time pretx)
+wgt2_tmp <- data.frame(t(apply(wgt2, 1, rankdates_wgt)))
+wgt2_tmp$gfr_order <- 0
+
+wgt2_tmp <- wgt2_tmp %>% 
+  rename(gfr_date = pretx_gfr_date,
+         wgt = pretx_wgt,
+         gfr_date = GFR_DO_GFR1_MIN,
+         gfr_order = GFR_DO_GFR1_MIN.1,
+         wgt = GFR_WGT1,
+         gfr_date = GFR_DO_GFR2_MIN,
+         gfr_order = GFR_DO_GFR2_MIN.1,
+         wgt = GFR_WGT2,
+         gfr_date = GFR_DO_GFR3_MIN,
+         gfr_order = GFR_DO_GFR3_MIN.1,
+         wgt = GFR_WGT3)
+
+
+## reformat into long form with only time and event cols, and combine with outcomes
+wgt2_f <- data.frame(rbind(wgt2_tmp[,c(1,13,2,3)], 
+                                 wgt2_tmp[,c(1,10,4,5)], 
+                                 wgt2_tmp[,c(1,11,6,7)], 
+                                 wgt2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(wgt))
+
+wgt2_f$gfr_order <- as.numeric(wgt2_f$gfr_order)
+wgt2_f$gfr_date  <- as.numeric(wgt2_f$gfr_date)
+wgt2_f$wgt       <- as.numeric(as.character(wgt2_f$wgt))
+
+wgt2_f %>%  
+  # ggplot(aes(as.numeric(gfr_order), as.numeric(levels(wgt))[wgt], color = Sub_Org_Accession)) +
+  ggplot(aes(gfr_order, wgt, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+## one 1dz
+## reformat into long form with only time and event cols, and combine with outcomes
+wgt2_f1 <- data.frame(rbind(wgt2_tmp[,c(1,13,2,3)], 
+                                 wgt2_tmp[,c(1,10,4,5)], 
+                                 wgt2_tmp[,c(1,11,6,7)], 
+                                 wgt2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(wgt)) %>%
+  filter(Sub_Org_Accession %in% (data.outcome.multipleDzs %>% filter(multipleDiseases == 1))$subject_ID)
+
+wgt2_f1$gfr_order <- as.numeric(wgt2_f1$gfr_order)
+wgt2_f1$gfr_date  <- as.numeric(wgt2_f1$gfr_date)
+wgt2_f1$wgt       <- as.numeric(as.character(wgt2_f1$wgt))
+
+wgt2_f1 %>%
+  # ggplot(aes(as.numeric(gfr_order), as.numeric(levels(wgt))[wgt], color = Sub_Org_Accession)) +
+  ggplot(aes(gfr_order, wgt, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+
+```
+
+
+
+
+#### CREATININE TRENDS ####
+```{r}
+## for convenience
+source("/Users/chenj220/R_codes/tx_figure4_gfr_cc_trends_fxns.R")
+
+
+## SERUM CREATININE VARIABLES
+## subset the table to get 1,401 patients with the following variables
+## wt, ht, serum creatinine, Urine creatinine, creatinine clearance, GFR(raw), GFR(BSA-corrected)
+posttx_1401_sc <- posttx %>%
+  filter(Sub_Org_Accession %in% unique(data.outcome$subject_ID)) %>%
+  posttx_choose_creatinine_var()
+
+
+posttx_majority_sc <- posttx %>%
+  filter(!(Sub_Org_Accession %in% unique(data.outcome$subject_ID))) %>%
+  posttx_choose_creatinine_var()
+
+
+## check missingness per variable/column
+## decided to focus on those creatinine values at least 50% non-missingness
+posttx_1401_sc_missingness_by_col <- 
+  data.frame(column = names(posttx_1401_sc[3:ncol(posttx_1401_sc)]), 
+             missingness = apply(is.na(posttx_1401_sc[3:ncol(posttx_1401_sc)]), 2, sum)) %>%
+  mutate(missingness_p = missingness / nrow(posttx_1401_sc))
+
+posttx_1401_sc_missingness_by_col %>% filter(missingness_p < 0.5)
+
+
+## serum creatinine: merge pretx and posttx
+ser_creat <- pretx_1401_myvar %>% select(Sub_Org_Accession, EVAL_DO_PHYSASSESS_MIN, EVAL_SERUM_CREAT) %>%
+  rename(pretx_ser_creat_date = EVAL_DO_PHYSASSESS_MIN, pretx_ser_creat = EVAL_SERUM_CREAT) %>%
+  merge(posttx_1401_sc %>% select(-Organ))
+
+# for all pretx dates, if NA, set to 0 (time of tx) - assume time of tx
+ser_creat[is.na(ser_creat$pretx_ser_creat_date),"pretx_ser_creat_date"] <- 0
+
+## for all 1-point posttx dates, if NA, set to 2 years = 365*2 = 730 - assume a far time of tx for plotting purposes
+ser_creat[is.na(ser_creat$PSO_DO_SERCREA_MIN),"PSO_DO_SERCREA_MIN"] <- 365*2
+
+```
+
+
+# SET 1 SC
+```{r}
+#### split into 2 sets ####
+### set1: pretx and posttx one timepoint each; EVAL_DO_PHYSASSESS_MIN, EVAL_SERUM_CREAT vs PSO_SERCREA, PSO_DO_SERCREA_MIN
+ser_creat1 <- ser_creat %>% 
+  select(Sub_Org_Accession,
+         pretx_ser_creat_date, pretx_ser_creat,
+         PSO_DO_SERCREA_MIN, PSO_SERCREA) %>%
+  filter(!(is.na(pretx_ser_creat) | is.na(PSO_SERCREA))) %>% ## only keep non-missing pretx or posttx ser_creat values
+  filter(pretx_ser_creat_date <= 0 | PSO_DO_SERCREA_MIN > 0) %>% ## only keep pretx date before or on tx (neg or 0) and posttx date after tx (pos)
+  rename(ser_creat_date = pretx_ser_creat_date,
+         ser_creat = pretx_ser_creat,
+         ser_creat_date = PSO_DO_SERCREA_MIN,
+         ser_creat = PSO_SERCREA)
+
+## reformat into long form with only time and event cols, and combine with outcomes
+ser_creat1_f <- data.frame(rbind(ser_creat1[,1:3], ser_creat1[,c(1,4,5)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") 
+
+ser_creat1_f %>%
+  ggplot(aes(as.numeric(ser_creat_date), as.double(ser_creat), color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+## only retain those with 1 dz
+## reformat into long form with only time and event cols, and combine with outcomes
+ser_creat1_f1 <- data.frame(rbind(ser_creat1[,1:3], ser_creat1[,c(1,4,5)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(Sub_Org_Accession %in% (data.outcome.multipleDzs %>% filter(multipleDiseases == 1))$subject_ID)
+
+ser_creat1_f1 %>%
+  ggplot(aes(as.numeric(ser_creat_date), as.double(ser_creat), color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+```
+
+# SET 2 SC
+```{r}
+###~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## set2: pretx and 3 posttx timepoints: SC_DO_SERCREA1_MIN, SC_SERUM_CREAT1,SC_DO_SERCREAT2_MIN, SC_SERUM_CREAT2, SC_DO_SERCREA3_MIN, SC_SERUM_CREAT3
+ser_creat2 <- ser_creat %>% 
+  select(Sub_Org_Accession,
+         pretx_ser_creat_date, pretx_ser_creat,
+         SC_DO_SERCREA1_MIN, SC_SERUM_CREAT1, 
+           SC_DO_SERCREAT2_MIN, SC_SERUM_CREAT2, 
+           SC_DO_SERCREA3_MIN, SC_SERUM_CREAT3) %>%
+  filter(!(is.na(pretx_ser_creat) | (is.na(SC_SERUM_CREAT1) & 
+                                       is.na(SC_SERUM_CREAT2) &
+                                       is.na(SC_SERUM_CREAT3)))) %>% ## only keep non-missing pretx or posttx ser_creat values
+  filter(pretx_ser_creat_date <= 0) ## keep only pretx_date <= 0
+
+# the dates for the 3 _MINs are not in order!
+# reorder them
+rankdates <- function(data){
+  a <- rank(c(data[4],data[6],data[8]), ties.method = "first")
+  data <- c(data, a[1], a[2], a[3])
+  # data[4]  <- a[1]
+  # data[6] <- a[2]
+  # data[8]  <- a[3]
+  # data[9] <- a[1]; data[10] <- a[2]; data[11] <- a[3] ## for debugging/checking
+
+  return(data)
+}
+
+## no preprocessing of pretx_date (which can go a long time pretx)
+ser_creat2_tmp <- data.frame(t(apply(ser_creat2, 1, rankdates)))
+ser_creat2_tmp$ser_creat_order <- 0
+
+ser_creat2_tmp <- ser_creat2_tmp %>% 
+  rename(ser_creat_date = pretx_ser_creat_date,
+         ser_creat = pretx_ser_creat,
+         ser_creat_date = SC_DO_SERCREA1_MIN,
+         ser_creat_order = SC_DO_SERCREA1_MIN.1,
+         ser_creat = SC_SERUM_CREAT1,
+         ser_creat_date = SC_DO_SERCREAT2_MIN,
+         ser_creat_order = SC_DO_SERCREAT2_MIN.1,
+         ser_creat = SC_SERUM_CREAT2,
+         ser_creat_date = SC_DO_SERCREA3_MIN,
+         ser_creat_order = SC_DO_SERCREA3_MIN.1,
+         ser_creat = SC_SERUM_CREAT3)
+
+
+## reformat into long form with only time and event cols, and combine with outcomes
+ser_creat2_f <- data.frame(rbind(ser_creat2_tmp[,c(1,13,2,3)], 
+                                 ser_creat2_tmp[,c(1,10,4,5)], 
+                                 ser_creat2_tmp[,c(1,11,6,7)], 
+                                 ser_creat2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(ser_creat))
+
+ser_creat2_f$ser_creat_order <- as.numeric(ser_creat2_f$ser_creat_order)
+ser_creat2_f$ser_creat_date  <- as.numeric(ser_creat2_f$ser_creat_date)
+ser_creat2_f$ser_creat       <- as.numeric(as.character(ser_creat2_f$ser_creat))
+
+ser_creat2_f %>%  
+  # ggplot(aes(as.numeric(ser_creat_order), as.numeric(levels(ser_creat))[ser_creat], color = Sub_Org_Accession)) +
+  ggplot(aes(ser_creat_order, ser_creat, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+## one 1dz
+## reformat into long form with only time and event cols, and combine with outcomes
+ser_creat2_f1 <- data.frame(rbind(ser_creat2_tmp[,c(1,13,2,3)], 
+                                 ser_creat2_tmp[,c(1,10,4,5)], 
+                                 ser_creat2_tmp[,c(1,11,6,7)], 
+                                 ser_creat2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(ser_creat)) %>%
+  filter(Sub_Org_Accession %in% (data.outcome.multipleDzs %>% filter(multipleDiseases == 1))$subject_ID)
+
+ser_creat2_f1$ser_creat_order <- as.numeric(ser_creat2_f1$ser_creat_order)
+ser_creat2_f1$ser_creat_date  <- as.numeric(ser_creat2_f1$ser_creat_date)
+ser_creat2_f1$ser_creat       <- as.numeric(as.character(ser_creat2_f1$ser_creat))
+
+ser_creat2_f1 %>%
+  # ggplot(aes(as.numeric(ser_creat_order), as.numeric(levels(ser_creat))[ser_creat], color = Sub_Org_Accession)) +
+  ggplot(aes(ser_creat_order, ser_creat, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+```

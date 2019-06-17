@@ -27,7 +27,7 @@ data <- matrix(c(512,71071,10901,4418205), 2,2,
 data
 ## fisher's test
 ## default is 2-sided, 95% CI
-x = fisher.test(data,alternative="two.sided")
+x <- fisher.test(data,alternative="two.sided")
 
 write(paste("TFpeak",x$p.value,sep="\t"),"",sep="\t")
 write(paste("TFpeak",x$estimate,sep="\t"),"",sep="\t")

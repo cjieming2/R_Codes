@@ -1,0 +1,550 @@
+---
+title: "tx_fig4_gfr_cc_trends"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(tidyr)
+source("/Users/chenj220/R_codes/tx_figure4_gfr_cc_trends_fxns.R")
+```
+
+
+Input
+```{r}
+
+## getting 1401 patients, 36 conditions
+o.ori <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/immport2cytoscape/txp_immport2outcomes-merged-relive01_02_03_immport2tsv-noControls_posttx_outcomes_kidney.txt", header = T, stringsAsFactors = F)
+
+
+o <- o.ori %>%
+        filter(!is.na(event_min) & !is.na(event_max)) %>%
+        filter(event_min >= 0)
+
+## add the tx node only on non-NA individuals
+tx <- data.frame(subject_ID=unique(o$subject_ID), event="transplant",event_min=0,event_max=0)
+o <- rbind(o, tx)
+
+nodes.labels <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/network_traj_analyses/cytoscape/network_info/tx_LD_outcome_node_info.txt", header = T)
+o <- merge(o, nodes.labels, by.x = "event", by.y = "network_name")
+
+## reorder
+# o$label <- factor(o$label, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_mean,op$nodesize)),]$label)))
+
+op <- o %>% 
+        group_by(event) %>%
+        dplyr::summarize(nodesize = n(),
+                  edgelength_mean = mean(event_min),
+                  edgelength_median = median(event_min))
+op <- merge(op, nodes.labels, by.y = "network_name", by.x = "event")
+op <- op[order(op$edgelength_mean,-op$nodesize),]
+
+# op$label <- factor(op$label, levels=op[rev(order(op$edgelength_mean,-op$nodesize)),]$label)
+op[op$event=="transplant", "nodesize"] <- 0 ## comment out this line to obtain size of transplant
+
+## 1401 patients, 36 conditions
+data.outcome <- o %>% filter(english_name != "transplant")
+
+## patients with multiple dzs
+data.outcome.multipleDzs <- data.outcome %>%
+  group_by(subject_ID) %>%
+  dplyr::summarize(multipleDiseases = n())
+```
+
+PRETX EXAM
+```{r}
+# pretx <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/finals.iTx/final.iTx.pretx_exam.v9.txt", header = T, stringsAsFactors = F)
+
+pretx <- read.table("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/finals.iTx/final.iTx.pretx_exam.v10.txt", header = T, stringsAsFactors = F)
+
+## subset the table to get 1,401 patients with the following variables
+## GFR(BSA-corrected)
+nummyvar <- 4
+pretx_1401_gfr <- pretx %>%
+  filter(Sub_Org_Accession %in% unique(data.outcome$subject_ID)) %>%
+  select(Sub_Org_Accession,
+         EVAL_DO_PHYSASSESS_MIN, ## date of exam
+         EVAL_GFR_TECH, EVAL_GFR_CORR  ## take (BSA-corrected) not plain GFR
+         ) 
+
+## gfr for the majority of donors w no conditions (nocon)
+pretx_nocons_gfr <- pretx %>%
+  filter(!(Sub_Org_Accession %in% unique(data.outcome$subject_ID))) %>%
+  select(Sub_Org_Accession,
+         EVAL_DO_PHYSASSESS_MIN, ## date of exam
+         EVAL_GFR_TECH, EVAL_GFR_CORR  ## take (BSA-corrected) not plain GFR
+         )
+
+```
+
+POSTTX EXAM
+```{r}
+
+# posttx <- read.delim("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/finals.iTx/final.iTx.posttx_exam.v6.txt", sep = "\t", header = T, stringsAsFactors = F)
+posttx <- read.delim("/Users/chenj220/Documents/ucsf/transplantation/a_donor/immport/finals.iTx/final.iTx.posttx_exam.v7.txt", sep = "\t", header = T, stringsAsFactors = F)
+
+## GFR VARIABLES
+posttx_1401_gfr <- posttx %>%
+  filter(Sub_Org_Accession %in% unique(data.outcome$subject_ID)) %>%
+  # posttx_choose_gfr_var_old()
+  posttx_choose_gfr_var()
+
+
+posttx_nocons_gfr <- posttx %>%
+  filter(!(Sub_Org_Accession %in% unique(data.outcome$subject_ID))) %>%
+  posttx_choose_gfr_var()
+
+
+```
+
+Merge pre- and post-tx GFR
+```{r}
+
+## gfr: merge pretx and posttx
+gfr <- pretx_1401_gfr %>% select(Sub_Org_Accession, EVAL_DO_PHYSASSESS_MIN, EVAL_GFR_CORR) %>%
+  dplyr::rename(pretx_gfr_date = EVAL_DO_PHYSASSESS_MIN, 
+         pretx_gfr = EVAL_GFR_CORR) %>%
+  merge(posttx_1401_gfr %>% select(-Organ))
+
+# for all pretx dates, if NA, set to 0 (time of tx) - assume time of tx
+gfr[is.na(gfr$pretx_gfr_date),"pretx_gfr_date"] <- 0
+
+## for all 1-point posttx dates, if NA, set to 2 years = 365*2 = 730 - assume a far time of tx for plotting purposes
+gfr[is.na(gfr$PSO_DO_GFR_MIN),"PSO_DO_GFR_MIN"] <- 365*2
+
+
+##!!!@#@!$%#$^%&$%-------------------------------------
+## gfr for the majority of donors w no conditions (nocon): merge pretx and posttx
+gfr_nocon <- pretx_nocons_gfr %>% select(Sub_Org_Accession, EVAL_DO_PHYSASSESS_MIN, EVAL_GFR_CORR) %>%
+  dplyr::rename(pretx_gfr_date = EVAL_DO_PHYSASSESS_MIN, 
+         pretx_gfr = EVAL_GFR_CORR) %>%
+  merge(posttx_nocons_gfr %>% select(-Organ))
+
+# for all pretx dates, if NA, set to 0 (time of tx) - assume time of tx
+gfr_nocon[is.na(gfr_nocon$pretx_gfr_date),"pretx_gfr_date"] <- 0
+
+## for all 1-point posttx dates, if NA, set to 2 years = 365*2 = 730 - assume a far time of tx for plotting purposes
+gfr_nocon[is.na(gfr_nocon$PSO_DO_GFR_MIN),"PSO_DO_GFR_MIN"] <- 365*2
+
+```
+
+# GFR SET2
+```{r}
+###~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## set2: pretx and 3 posttx timepoints: GFR_DO_GFR1_MIN, GFR_GFR1,GFR_DO_GFR2_MIN, GFR_GFR2, GFR_DO_GFR1_MIN, GFR_GFR3
+## filtering criteria
+## 1) pretx not NA
+## 2) posttx GFR values cannot be NA for ALL 3 (i.e. if 1 or 2 exist only thats fine)
+## 3) pretx dates <= 0 (some pretx dates are posttx)
+gfr2 <- gfr %>% 
+  select(Sub_Org_Accession,
+         pretx_gfr_date, pretx_gfr,
+         GFR_DO_GFR1_MIN, GFR_GFR1, 
+           GFR_DO_GFR2_MIN, GFR_GFR2, 
+           GFR_DO_GFR3_MIN, GFR_GFR3) %>%
+  filter(!(is.na(pretx_gfr) | (is.na(GFR_GFR1) & 
+                                       is.na(GFR_GFR2) &
+                                       is.na(GFR_GFR3)))) %>% ## only keep non-missing pretx or posttx gfr values
+  filter(pretx_gfr_date <= 0) ## keep only pretx_date <= 0
+
+
+gfr2_nocon <- gfr_nocon %>% 
+  select(Sub_Org_Accession,
+         pretx_gfr_date, pretx_gfr,
+         GFR_DO_GFR1_MIN, GFR_GFR1, 
+           GFR_DO_GFR2_MIN, GFR_GFR2, 
+           GFR_DO_GFR3_MIN, GFR_GFR3) %>%
+  filter(!(is.na(pretx_gfr) | (is.na(GFR_GFR1) & 
+                                       is.na(GFR_GFR2) &
+                                       is.na(GFR_GFR3)))) %>% ## only keep non-missing pretx or posttx gfr values
+  filter(pretx_gfr_date <= 0) ## keep only pretx_date <= 0
+
+
+## Reorder according to dates
+# the dates for the 3 posttx _MINs are not in order!
+rankdates_gfr <- function(data){
+  a <- rank(c(data[4],data[6],data[8]))
+  data <- c(data, a[1], a[2], a[3])
+  # data[4]  <- a[1]
+  # data[6] <- a[2]
+  # data[8]  <- a[3]
+  # data[9] <- a[1]; data[10] <- a[2]; data[11] <- a[3] ## for debugging/checking
+
+  return(data)
+}
+
+## no preprocessing of pretx_date (which can go a long time pretx)
+## set pretx to order 0
+gfr2_tmp <- data.frame(t(apply(gfr2, 1, rankdates_gfr)))
+gfr2_tmp_nocon <- data.frame(t(apply(gfr2_nocon, 1, rankdates_gfr)))
+gfr2_tmp$gfr_order <- 0
+gfr2_tmp_nocon$gfr_order <- 0
+
+### tmp variables produce gfr_f and gfr_f1
+gfr2_tmp <- gfr2_tmp %>% 
+  dplyr::rename(gfr_date = pretx_gfr_date,
+         gfr = pretx_gfr,
+         gfr_date = GFR_DO_GFR1_MIN,
+         gfr_order = GFR_DO_GFR1_MIN.1,
+         gfr = GFR_GFR1,
+         gfr_date = GFR_DO_GFR2_MIN,
+         gfr_order = GFR_DO_GFR2_MIN.1,
+         gfr = GFR_GFR2,
+         gfr_date = GFR_DO_GFR3_MIN,
+         gfr_order = GFR_DO_GFR3_MIN.1,
+         gfr = GFR_GFR3)
+
+gfr2_tmp_nocon <- gfr2_tmp_nocon %>% 
+  dplyr::rename(gfr_date = pretx_gfr_date,
+         gfr = pretx_gfr,
+         gfr_date = GFR_DO_GFR1_MIN,
+         gfr_order = GFR_DO_GFR1_MIN.1,
+         gfr = GFR_GFR1,
+         gfr_date = GFR_DO_GFR2_MIN,
+         gfr_order = GFR_DO_GFR2_MIN.1,
+         gfr = GFR_GFR2,
+         gfr_date = GFR_DO_GFR3_MIN,
+         gfr_order = GFR_DO_GFR3_MIN.1,
+         gfr = GFR_GFR3)
+
+
+## Reformat into long form with only time and event cols, 
+## and combine with outcomes
+## filters 
+## (1) those with no GFR values are removed (these removed most with no dates)
+## (2) those with GFR values but no dates also removed --> this can result in subjects with only pretx since these are subjects that have GFR1 only but no date for it and these are not filtered before, so 
+## we want to filter them before plotting
+gfr2_f <- data.frame(rbind(gfr2_tmp[,c(1,13,2,3)], 
+                                 gfr2_tmp[,c(1,10,4,5)], 
+                                 gfr2_tmp[,c(1,11,6,7)], 
+                                 gfr2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(gfr)) %>%
+  filter(!is.na(gfr_date))
+gfr2_f$gfr_order <- as.numeric(gfr2_f$gfr_order)
+gfr2_f$gfr_date  <- as.numeric(gfr2_f$gfr_date)
+gfr2_f$gfr       <- as.numeric(as.character(gfr2_f$gfr))
+
+# remove subjects with only 1 order == pretx (0)
+a <- as.data.frame(table(gfr2_f$Sub_Org_Accession), stringsAsFactors = F) %>% filter(Freq != 1)
+gfr2_f <- gfr2_f[gfr2_f$Sub_Org_Accession %in% a$Var1,]
+
+
+
+
+gfr2_f_nocon <- data.frame(rbind(gfr2_tmp_nocon[,c(1,13,2,3)], 
+                                 gfr2_tmp_nocon[,c(1,10,4,5)], 
+                                 gfr2_tmp_nocon[,c(1,11,6,7)], 
+                                 gfr2_tmp_nocon[,c(1,12,8,9)])) %>%
+  mutate(event_min = 0, english_name = "donors_no_conditions") %>%
+  filter(!is.na(gfr)) %>%
+  filter(!is.na(gfr_date))
+gfr2_f_nocon$gfr_order <- as.numeric(gfr2_f_nocon$gfr_order)
+gfr2_f_nocon$gfr_date  <- as.numeric(gfr2_f_nocon$gfr_date)
+gfr2_f_nocon$gfr       <- as.numeric(as.character(gfr2_f_nocon$gfr))
+
+# remove subjects with only 1 order == pretx (0)
+b <- as.data.frame(table(gfr2_f_nocon$Sub_Org_Accession), stringsAsFactors = F) %>% filter(Freq != 1)
+gfr2_f_nocon <- gfr2_f_nocon[gfr2_f_nocon$Sub_Org_Accession %in% b$Var1,]
+
+
+
+#############
+### PLOTS ###
+#############
+## ALL
+## the no conditions donors soaking up all the colors
+## split
+getPalette <- colorRampPalette(brewer.pal(9, "Set1"))
+# count how many colors you need
+colorCount <- nrow(gfr2_f_nocon)
+# getPalette(colorCount)
+
+rbind(gfr2_f, gfr2_f_nocon) %>%  
+  # ggplot(aes(as.numeric(gfr_order), as.numeric(levels(gfr))[gfr], color = Sub_Org_Accession)) +
+  ggplot(aes(gfr_order, gfr, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = rep(getPalette(25), ceiling(185/25)))
+
+
+```
+
+# SET2: FOCUS ONLY THOSE WITH 1 DZ
+```{r}
+## FOCUS ONLY THOSE WITH 1 DZ
+## reformat into long form with only time and event cols, and combine with outcomes
+gfr2_f1 <- data.frame(rbind(gfr2_tmp[,c(1,13,2,3)], 
+                                 gfr2_tmp[,c(1,10,4,5)], 
+                                 gfr2_tmp[,c(1,11,6,7)], 
+                                 gfr2_tmp[,c(1,12,8,9)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(!is.na(gfr)) %>%
+  filter(Sub_Org_Accession %in% (data.outcome.multipleDzs %>% filter(multipleDiseases == 1))$subject_ID) %>%
+  filter(!is.na(gfr_date))
+gfr2_f1$gfr_order <- as.numeric(gfr2_f1$gfr_order)
+gfr2_f1$gfr_date  <- as.numeric(gfr2_f1$gfr_date)
+gfr2_f1$gfr       <- as.numeric(as.character(gfr2_f1$gfr)) 
+
+# remove subjects with only 1 order == pretx (0)
+c <- as.data.frame(table(gfr2_f1$Sub_Org_Accession), stringsAsFactors = F) %>% filter(Freq != 1)
+gfr2_f1 <- gfr2_f1[gfr2_f1$Sub_Org_Accession %in% c$Var1,]
+
+
+
+
+gfr2_f1_nocon <- data.frame(rbind(gfr2_tmp_nocon[,c(1,13,2,3)], 
+                                 gfr2_tmp_nocon[,c(1,10,4,5)], 
+                                 gfr2_tmp_nocon[,c(1,11,6,7)], 
+                                 gfr2_tmp_nocon[,c(1,12,8,9)])) %>%
+  mutate(event_min = 0, english_name = "donors_no_conditions") %>%
+  filter(!is.na(gfr)) %>%
+  filter(!is.na(gfr_date))
+gfr2_f1_nocon$gfr_order <- as.numeric(gfr2_f1_nocon$gfr_order)
+gfr2_f1_nocon$gfr_date  <- as.numeric(gfr2_f1_nocon$gfr_date)
+gfr2_f1_nocon$gfr       <- as.numeric(as.character(gfr2_f1_nocon$gfr))
+
+# remove subjects with only 1 order == pretx (0)
+d <- as.data.frame(table(gfr2_f1_nocon$Sub_Org_Accession), stringsAsFactors = F) %>% filter(Freq != 1)
+gfr2_f1_nocon <- gfr2_f1_nocon[gfr2_f1_nocon$Sub_Org_Accession %in% d$Var1,]
+
+#############
+### PLOTS ###
+#############
+
+## the no conditions donors soaking up all the colors
+## split
+getPalette <- colorRampPalette(brewer.pal(9, "Set1"))
+# count how many colors you need
+colorCount <- nrow(gfr2_f1_nocon)
+# getPalette(colorCount)
+
+# Plot all conditions (incl nocon)
+rbind(gfr2_f1, gfr2_f1_nocon) %>%
+  # ggplot(aes(as.numeric(gfr_order), as.numeric(levels(gfr))[gfr], color = Sub_Org_Accession)) +
+  ggplot(aes(gfr_order, gfr, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none") +
+  # scale_color_manual(values = getPalette(colorCount))
+  scale_color_manual(values = rep(getPalette(25),ceiling(1529/25)))
+
+# Plot all conditions (excl nocon and hypertension)
+p1 <- gfr2_f1 %>%
+  filter(english_name != "New_Hypertension_Diagnosis") %>%
+  ggplot(aes(gfr_order, gfr, color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none") +
+  # scale_color_manual(values = getPalette(colorCount))
+  scale_color_manual(values = rep(getPalette(25),1475/25))
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig6-GFR_creatinine/gfr2_f1_conditions.pdf", p1, device = "pdf")
+print(p1)
+
+# Plot nocon only
+p2 <- gfr2_f1_nocon %>%
+  ggplot(aes(gfr_order, gfr, color = Sub_Org_Accession)) +
+  geom_line() +
+  theme(legend.position = "none") +
+  # scale_color_manual(values = getPalette(colorCount))
+  scale_color_manual(values = rep(getPalette(25),1475/25)) +
+  scale_y_continuous(breaks=seq(0,200,by=50))
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig6-GFR_creatinine/gfr2_f1_nocons.pdf", p2, device = "pdf")
+print(p2)
+
+# Plot Hypertension only
+dz <- "New_Hypertension_Diagnosis"
+p3 <- gfr2_f1 %>%
+  filter(english_name == dz) %>%
+  ggplot(aes(gfr_order, gfr, color = Sub_Org_Accession)) +
+  geom_line() +
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none") +
+  # scale_color_manual(values = getPalette(colorCount))
+  scale_color_manual(values = rep(getPalette(25),1475/25)) +
+  scale_y_continuous(breaks=seq(0,200,by=50))
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig6-GFR_creatinine/gfr2_f1_hypertension.pdf", p3, device = "pdf")
+print(p3)
+
+## number of hypertensive LKDs below 60
+h60 <- gfr2_f1 %>%
+  filter(english_name == dz) %>%
+  filter(gfr <= 60)
+```
+
+#Taking Fisher's test to check for significance
+```{r}
+
+## take difference between pretx and the final posttx to decide if the patient has a drop
+dz <- "New_Hypertension_Diagnosis"
+forfisher_gfr_final_dz1 <- gfr2_f1 %>%
+  filter(english_name == dz) %>%
+  select(-gfr_date) %>%
+  spread(gfr_order, gfr)
+
+forfisher_gfr_final_nocon <- gfr2_f1_nocon %>%
+  select(-gfr_date) %>%
+  spread(gfr_order, gfr)
+
+
+
+#### Last Posttx minus pretx
+forfisher_gfr_final_dz1 <- forfisher_gfr_final_dz1 %>%
+  mutate(LastPosttxMinusPretx = 
+           apply(forfisher_gfr_final_dz1 %>% select("0","1","2","3"), 1, 
+                 function(x){
+                   xx <- x[!is.na(x)]
+                   last(xx) - first(xx)
+                   })) %>%
+  mutate(negpos = ifelse(LastPosttxMinusPretx<0, "GFRdrop", "GFRrise"))
+
+
+forfisher_gfr_final_nocon <- forfisher_gfr_final_nocon %>%
+  mutate(LastPosttxMinusPretx = 
+           apply(forfisher_gfr_final_nocon %>% select("0","1","2","3"), 1, 
+                 function(x){
+                   xx <- x[!is.na(x)]
+                   last(xx) - first(xx)
+                   })) %>%
+  mutate(negpos = ifelse(LastPosttxMinusPretx<0, "GFRdrop", "GFRrise"))
+
+
+
+
+
+d <- rbind(con = table(forfisher_gfr_final_dz1$negpos), nocon = table(forfisher_gfr_final_nocon$negpos))
+fisher.test(d, alternative="two.sided")
+```
+
+
+
+# GFR SET1 (only 1 pretx and 1 posttx) (deprecated)
+```{r}
+#### split into 2 sets ####
+### set1: pretx and posttx one timepoint each; EVAL_DO_PHYSASSESS_MIN, EVAL_GFR_CORR vs PSO_GFR, PSO_DO_GFR_MIN
+gfr1 <- gfr %>% 
+  select(Sub_Org_Accession,
+         pretx_gfr_date, pretx_gfr,
+         PSO_DO_GFR_MIN, PSO_GFR) %>%
+  filter(!(is.na(pretx_gfr) | is.na(PSO_GFR))) %>% ## only keep non-missing pretx or posttx gfr values
+  filter(pretx_gfr_date <= 0 | PSO_DO_GFR_MIN > 0) %>% ## only keep pretx date before or on tx (neg or 0) and posttx date after tx (pos)
+  dplyr::rename(gfr_date = pretx_gfr_date,
+         gfr = pretx_gfr,
+         gfr_date = PSO_DO_GFR_MIN,
+         gfr = PSO_GFR)
+
+gfr1_nocon <- gfr_nocon %>% 
+  select(Sub_Org_Accession,
+         pretx_gfr_date, pretx_gfr,
+         PSO_DO_GFR_MIN, PSO_GFR) %>%
+  filter(!(is.na(pretx_gfr) | is.na(PSO_GFR))) %>% ## only keep non-missing pretx or posttx gfr values
+  filter(pretx_gfr_date <= 0 | PSO_DO_GFR_MIN > 0) %>% ## only keep pretx date before or on tx (neg or 0) and posttx date after tx (pos)
+  dplyr::rename(gfr_date = pretx_gfr_date,
+         gfr = pretx_gfr,
+         gfr_date = PSO_DO_GFR_MIN,
+         gfr = PSO_GFR)
+
+## reformat into long form with only time and event cols, and combine with outcomes
+gfr1_f <- data.frame(rbind(gfr1[,1:3], gfr1[,c(1,4,5)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") 
+
+gfr1_f_nocon <- data.frame(rbind(gfr1_nocon[,1:3], gfr1_nocon[,c(1,4,5)])) %>%
+  mutate(event_min = 0, english_name = "donors_no_conditions")
+
+rbind(gfr1_f, gfr1_f_nocon) %>%
+  ggplot(aes(as.numeric(gfr_date), as.double(gfr), color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none")
+
+
+
+
+## only retain those with 1 dz
+## reformat into long form with only time and event cols, and combine with outcomes
+gfr1_f1 <- data.frame(rbind(gfr1[,1:3], gfr1[,c(1,4,5)])) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  filter(Sub_Org_Accession %in% (data.outcome.multipleDzs %>% filter(multipleDiseases == 1))$subject_ID)
+
+
+
+
+
+
+###PLOT###
+
+h3 <- rbind(gfr1_f1, gfr1_f_nocon)  %>%
+  ggplot(aes(as.numeric(gfr_date), as.double(gfr), color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = rep(getPalette(25),ceiling(nrow(rbind(gfr1_f1,gfr1_f_nocon))/25)))
+
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig6-GFR_creatinine/conditions.pdf", h3, device = "pdf")
+
+## the no conditions donors soaking up all the colors
+## split
+getPalette <- colorRampPalette(brewer.pal(9, "Set1"))
+
+
+# Plot all conditions (excl nocon)
+gfr1_f1 %>%
+  ggplot(aes(as.numeric(gfr_date), as.double(gfr), color = Sub_Org_Accession)) +
+  geom_line() + 
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = rep(getPalette(25),ceiling(nrow(gfr1_f1)/25)))
+
+# Plot nocon only
+h1 <- gfr1_f_nocon %>%
+  ggplot(aes(as.numeric(gfr_date), as.double(gfr), color = Sub_Org_Accession)) +
+  geom_line() +
+  theme(legend.position = "none") +
+  scale_color_manual(values = rep(getPalette(25),ceiling(nrow(gfr1_f_nocon)/25)))
+
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig6-GFR_creatinine/gfr1_f_nocon.pdf", h1, device = "pdf")
+
+# Plot Hypertension only
+dz <- "New_Hypertension_Diagnosis"
+h2 <- gfr1_f1 %>%
+  filter(english_name == dz) %>%
+  ggplot(aes(as.numeric(gfr_date), as.double(gfr), color = Sub_Org_Accession)) +
+  geom_line() +
+  facet_wrap(~ english_name) + 
+  theme(legend.position = "none") +
+  scale_color_manual(values = rep(getPalette(25),ceiling(nrow(gfr1_f1)/25)))
+
+# ggsave("/Users/chenj220/Documents/ucsf/transplantation/manuscript/figures/suppfig6-GFR_creatinine/gfr1_f1_hypertension.pdf", h2, device = "pdf")
+```
+
+#Taking Fisher's test to check for significance for GFRset1
+```{r}
+
+## take difference between pretx and the final posttx to decide if the patient has a drop
+dz <- "New_Hypertension_Diagnosis"
+gfr1_2 <- gfr1
+names(gfr1_2) <- c("Sub_Org_Accession","Pretx_date","Pretx_gfr","Posttx_date","Posttx_gfr")
+gfr1_2 <- gfr1_2 %>%
+  mutate(LastPosttxMinusPretx = Posttx_gfr - Pretx_gfr) %>%
+  merge((data.outcome %>% select(subject_ID, event_min, english_name)), by.x = "Sub_Org_Accession", by.y = "subject_ID") %>%
+  mutate(negpos = ifelse(LastPosttxMinusPretx > 0, "GFRrise", "GFRdrop"))
+
+gfr1_2_nocon <- gfr1_nocon
+names(gfr1_2_nocon) <- c("Sub_Org_Accession","Pretx_date","Pretx_gfr","Posttx_date","Posttx_gfr")
+gfr1_2_nocon <- gfr1_2_nocon %>%
+  mutate(LastPosttxMinusPretx = Posttx_gfr - Pretx_gfr) %>%
+  mutate(negpos = ifelse(LastPosttxMinusPretx > 0, "GFRrise", "GFRdrop"))
+
+
+table(gfr1_2$negpos)
+table(gfr1_2_nocon$negpos)
+
+d <- rbind(con = table(gfr1_2$negpos), nocon = table(gfr1_2_nocon$negpos))
+fisher.test(d, alternative="two.sided")
+fisher.test(d, alternative="less")
+
+```
