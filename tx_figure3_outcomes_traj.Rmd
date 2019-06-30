@@ -132,6 +132,8 @@ o <- rbind(o, tx)
 
 o <- merge(o, nodes.labels, by.x = "event", by.y = "id")
 
+# write.table(tx$subject_ID, quote = F, row.names = F)
+
 ## reorder
 # o$label <- factor(o$label, levels = levels(factor(op$label, levels=op[rev(order(op$edgelength_mean,op$nodesize)),]$label)))
 
