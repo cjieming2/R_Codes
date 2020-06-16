@@ -1,0 +1,58 @@
+---
+title: "plot_c1R_expression"
+author: "Jieming Chen"
+date: "6/15/2020"
+output: html_document
+---
+
+# libraries
+```{r libraries, include=FALSE}
+
+library(dplyr)
+library(plyr)
+library(ggplot2)
+library(stringr)
+library(tidyr)
+library(parallel)
+library(ggrepel)
+```
+
+# plot
+```{r}
+
+df <- data.frame(
+  HLA_gene = c("A","B","C"),
+  nRPKM = seq(1:3),
+  order = seq(1:3)
+)
+
+df %>% 
+  ggplot(aes(x=reorder(HLA_gene, -order), y=nRPKM)) + 
+    geom_bar(stat = "identity") + 
+    labs(x="HLA_gene", y="nRPKM") + 
+    theme(axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          axis.text.x = element_text(size = 18),
+          axis.text.y = element_text(size = 18),
+          title = element_text(size = 18)) +
+    theme(legend.title = element_text(face = "bold", size = 18), legend.text = element_text(size = 16)) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+    coord_flip()
+
+
+# pdf("/Users/chenj220/Documents/projects/gCell/K562_C1R/plot_c1r_expression.pdf")
+# df %>% 
+#   ggplot(aes(x=reorder(HLA_gene, -order), y=nRPKM)) + 
+#     geom_bar(stat = "identity") + 
+#     labs(x="HLA_gene", y="nRPKM") + 
+#     theme(axis.title.x = element_text(size = 18),
+#           axis.title.y = element_text(size = 18),
+#           axis.text.x = element_text(size = 18),
+#           axis.text.y = element_text(size = 18),
+#           title = element_text(size = 18)) +
+#     theme(legend.title = element_text(face = "bold", size = 18), legend.text = element_text(size = 16)) +
+#     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+#     coord_flip()
+# dev.off()
+
+```
